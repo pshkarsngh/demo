@@ -152,7 +152,7 @@ export function FiltersPanel({ filters, onChange, onClear, onClose }: FiltersPro
                 key={d}
                 label={d}
                 checked={(filters.courseNames ?? []).includes(d)}
-                onChange={(v) => toggle("courseNames", d)}
+                onChange={() => toggle("courseNames", d)}
               />
             ))}
           </div>
@@ -165,7 +165,7 @@ export function FiltersPanel({ filters, onChange, onClear, onClose }: FiltersPro
                 key={s}
                 label={s}
                 checked={(filters.states ?? []).includes(s)}
-                onChange={(v) => toggle("states", s)}
+                onChange={() => toggle("states", s)}
               />
             ))}
           </div>
@@ -178,7 +178,7 @@ export function FiltersPanel({ filters, onChange, onClear, onClose }: FiltersPro
                 key={c}
                 label={c}
                 checked={(filters.cities ?? []).includes(c)}
-                onChange={(v) => toggle("cities", c)}
+                onChange={() => toggle("cities", c)}
               />
             ))}
           </div>
@@ -191,7 +191,7 @@ export function FiltersPanel({ filters, onChange, onClear, onClose }: FiltersPro
                 key={t}
                 label={t}
                 checked={(filters.types ?? []).includes(t)}
-                onChange={(v) => toggle("types", t)}
+                onChange={() => toggle("types", t)}
               />
             ))}
           </div>
@@ -204,7 +204,7 @@ export function FiltersPanel({ filters, onChange, onClear, onClose }: FiltersPro
                 key={s}
                 label={`${s} colleges`}
                 checked={(filters.sectors ?? []).includes(s)}
-                onChange={(v) => toggle("sectors", s)}
+                onChange={() => toggle("sectors", s)}
               />
             ))}
           </div>
@@ -217,7 +217,7 @@ export function FiltersPanel({ filters, onChange, onClear, onClose }: FiltersPro
                 key={e}
                 label={e}
                 checked={(filters.exams ?? []).includes(e)}
-                onChange={(v) => toggle("exams", e)}
+                onChange={() => toggle("exams", e)}
               />
             ))}
           </div>
@@ -230,7 +230,7 @@ export function FiltersPanel({ filters, onChange, onClear, onClose }: FiltersPro
                 key={a}
                 label={a}
                 checked={(filters.accreditations ?? []).includes(a)}
-                onChange={(v) => toggle("accreditations", a)}
+                onChange={() => toggle("accreditations", a)}
               />
             ))}
           </div>
