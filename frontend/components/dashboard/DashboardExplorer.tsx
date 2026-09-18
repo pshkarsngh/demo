@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import {
   Heart,
   Eye,
@@ -16,6 +17,14 @@ import {
   Sparkles,
   Bookmark,
   Trash2,
+  FileQuestion,
+  Bell,
+  MessagesSquare,
+  UserRound,
+  Phone,
+  GraduationCap,
+  Wallet,
+  CheckCircle2,
 } from "lucide-react";
 import { useApp } from "@/lib/context/AppContext";
 import {
@@ -27,21 +36,27 @@ import {
 import { COLLEGES } from "@/lib/data/colleges";
 import { COURSES } from "@/lib/data/courses";
 import { SCHOLARSHIPS } from "@/lib/data/scholarships";
-import { formatINR, matchScore } from "@/lib/utils";
+import { formatINR, matchScore, formatDate } from "@/lib/utils";
 import { Badge } from "@/components/ui/Badge";
-import { ButtonLink } from "@/components/ui/Button";
+import { Button, ButtonLink } from "@/components/ui/Button";
 import { Tabs, Switch } from "@/components/ui/Tabs";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { Rating } from "@/components/ui/Rating";
+import { Input, Label } from "@/components/ui/FormField";
 import { CollegeCard } from "@/components/college/CollegeCard";
 import { CampusArt } from "@/components/college/CampusArt";
 
 const TABS = [
   { id: "overview", label: "Overview", icon: <Star className="h-3.5 w-3.5" /> },
   { id: "saved", label: "Saved", icon: <Heart className="h-3.5 w-3.5" /> },
+  { id: "tests", label: "Mock Tests", icon: <FileQuestion className="h-3.5 w-3.5" /> },
+  { id: "profile", label: "Profile", icon: <UserRound className="h-3.5 w-3.5" /> },
   { id: "recent", label: "Recent", icon: <Eye className="h-3.5 w-3.5" /> },
   { id: "searches", label: "Searches", icon: <Search className="h-3.5 w-3.5" /> },
   { id: "comparisons", label: "Compare", icon: <Scale className="h-3.5 w-3.5" /> },
+  { id: "scholarships", label: "Scholarships", icon: <Award className="h-3.5 w-3.5" /> },
+  { id: "enquiries", label: "Enquiries", icon: <MessagesSquare className="h-3.5 w-3.5" /> },
+  { id: "notifications", label: "Alerts", icon: <Bell className="h-3.5 w-3.5" /> },
   { id: "settings", label: "Settings", icon: <Settings className="h-3.5 w-3.5" /> },
 ];
 
@@ -499,6 +514,269 @@ function ComparisonsTab() {
   );
 }
 
+function ProfileTab() {
+  const { profile, setProfile } = useApp();
+  const [form, setForm] = useState({
+    name: profile?.name ?? "",
+    email: profile?.email ?? "",
+    mobile: profile?.mobile ?? "",
+    city: profile?.city ?? "",
+    state: profile?.state ?? "",
+    education: profile?.education?.join(", ") ?? "",
+    interests: profile?.interests?.join(", ") ?? "",
+    preferredState: profile?.preferredState ?? "",
+    preferredCity: profile?.preferredCity ?? "",
+    budgetMin: profile?.budgetMin !== null && profile?.budgetMin !== undefined ? String(profile.budgetMin) : "",
+    budgetMax: profile?.budgetMax !== null && profile?.budgetMax !== undefined ? String(profile.budgetMax) : "",
+  });
+
+  const save = (e: React.FormEvent) => {
+    e.preventDefault();
+    setProfile({
+      name: form.name,
+      email: form.email,
+      mobile: form.mobile,
+      city: form.city,
+      state: form.state,
+      education: form.education.split(",").map((s) => s.trim()).filter(Boolean),
+      interests: form.interests.split(",").map((s) => s.trim()).filter(Boolean),
+      preferredState: form.preferredState,
+      preferredCity: form.preferredCity,
+      budgetMin: form.budgetMin ? Number(form.budgetMin) : null,
+      budgetMax: form.budgetMax ? Number(form.budgetMax) : null,
+    });
+  };
+
+  return (
+    <form onSubmit={save} className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+      <div className="sm:col-span-2">
+        <h3 className="flex items-center gap-2 font-display text-lg font-bold text-gray-900">
+          <UserRound className="h-5 w-5 text-purple-500" /> Profile & education
+        </h3>
+      </div>
+
+      <div className="space-y-1.5">
+        <Label htmlFor="pf-name">Full name</Label>
+        <Input id="pf-name" value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} placeholder="Your name" />
+      </div>
+      <div className="space-y-1.5">
+        <Label htmlFor="pf-mobile">Mobile</Label>
+        <Input id="pf-mobile" value={form.mobile} onChange={(e) => setForm((f) => ({ ...f, mobile: e.target.value }))} placeholder="10-digit mobile" />
+      </div>
+      <div className="space-y-1.5">
+        <Label htmlFor="pf-email">Email</Label>
+        <Input id="pf-email" type="email" value={form.email} onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))} placeholder="you@example.com" />
+      </div>
+      <div className="space-y-1.5">
+        <Label htmlFor="pf-city">City</Label>
+        <Input id="pf-city" value={form.city} onChange={(e) => setForm((f) => ({ ...f, city: e.target.value }))} placeholder="Home city" />
+      </div>
+      <div className="space-y-1.5">
+        <Label htmlFor="pf-state">State</Label>
+        <Input id="pf-state" value={form.state} onChange={(e) => setForm((f) => ({ ...f, state: e.target.value }))} placeholder="Home state" />
+      </div>
+      <div className="space-y-1.5">
+        <Label htmlFor="pf-edu" className="flex items-center gap-1.5">
+          <GraduationCap className="h-3.5 w-3.5 text-purple-500" /> Education details
+        </Label>
+        <Input id="pf-edu" value={form.education} onChange={(e) => setForm((f) => ({ ...f, education: e.target.value }))} placeholder="e.g. Class 12 (PCM), B.Tech" />
+      </div>
+      <div className="space-y-1.5">
+        <Label htmlFor="pf-interest">Course interests</Label>
+        <Input id="pf-interest" value={form.interests} onChange={(e) => setForm((f) => ({ ...f, interests: e.target.value }))} placeholder="e.g. B.Tech CSE, MBA" />
+      </div>
+      <div className="space-y-1.5">
+        <Label htmlFor="pf-pref-state">Preferred state</Label>
+        <Input id="pf-pref-state" value={form.preferredState} onChange={(e) => setForm((f) => ({ ...f, preferredState: e.target.value }))} placeholder="e.g. Maharashtra" />
+      </div>
+      <div className="space-y-1.5">
+        <Label htmlFor="pf-pref-city">Preferred city</Label>
+        <Input id="pf-pref-city" value={form.preferredCity} onChange={(e) => setForm((f) => ({ ...f, preferredCity: e.target.value }))} placeholder="e.g. Pune" />
+      </div>
+      <div className="space-y-1.5">
+        <Label htmlFor="pf-budmin" className="flex items-center gap-1.5">
+          <Wallet className="h-3.5 w-3.5 text-purple-500" /> Budget min (₹/yr)
+        </Label>
+        <Input id="pf-budmin" type="number" value={form.budgetMin} onChange={(e) => setForm((f) => ({ ...f, budgetMin: e.target.value }))} placeholder="e.g. 100000" />
+      </div>
+      <div className="space-y-1.5">
+        <Label htmlFor="pf-budmax">Budget max (₹/yr)</Label>
+        <Input id="pf-budmax" type="number" value={form.budgetMax} onChange={(e) => setForm((f) => ({ ...f, budgetMax: e.target.value }))} placeholder="e.g. 500000" />
+      </div>
+
+      <div className="sm:col-span-2">
+        <Button type="submit" variant="accent">
+          <CheckCircle2 className="h-4 w-4" /> Save profile
+        </Button>
+      </div>
+    </form>
+  );
+}
+
+function TestsTab() {
+  const { testHistory } = useApp();
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <h3 className="flex items-center gap-2 font-display text-lg font-bold text-gray-900">
+          <FileQuestion className="h-5 w-5 text-purple-500" /> Mock test history
+        </h3>
+        <ButtonLink href="/mock-tests" variant="primary" size="sm">
+          Take a test
+        </ButtonLink>
+      </div>
+      {testHistory.length === 0 ? (
+        <EmptyState
+          icon={FileQuestion}
+          title="No mock tests taken yet"
+          description="Attempt a free mock test and track your score, percentile and topic-wise performance here."
+          actionHref="/mock-tests"
+          actionLabel="Browse mock tests"
+        />
+      ) : (
+        <div className="space-y-3">
+          {testHistory.map((t) => {
+            const pct = Math.round((t.correct / t.total) * 100);
+            return (
+              <Link
+                key={t.id}
+                href="/mock-tests"
+                className="flex flex-wrap items-center justify-between gap-4 rounded-2xl bg-white px-5 py-4 ring-1 ring-purple-100/60 card-shadow transition hover:-translate-y-0.5 hover:shadow-md"
+              >
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-bold text-gray-900">{t.testTitle}</p>
+                  <p className="text-xs text-gray-400">{t.exam} · {formatDate(t.date)}</p>
+                </div>
+                <div className="flex items-center gap-4">
+                  <div className="text-right">
+                    <p className="text-sm font-extrabold text-gray-900">{t.score}/{t.maxScore}</p>
+                    <p className="text-xs text-gray-400">{pct}%</p>
+                  </div>
+                  <Badge variant="purple">{t.percentile} percentile</Badge>
+                </div>
+              </Link>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ScholarshipsTab() {
+  const { savedScholarships } = useApp();
+  const items = SCHOLARSHIPS.filter((s) => savedScholarships.includes(s.id));
+  return (
+    <div>
+      <h3 className="flex items-center gap-2 font-display text-lg font-bold text-gray-900">
+        <Award className="h-5 w-5 text-amber-500" /> Scholarship interests ({items.length})
+      </h3>
+      {items.length === 0 ? (
+        <EmptyState
+          icon={Award}
+          title="No scholarships saved yet"
+          description="Save scholarships you're eligible for and track them here."
+          actionHref="/scholarships"
+          actionLabel="Browse scholarships"
+        />
+      ) : (
+        <div className="mt-4 grid gap-4 sm:grid-cols-2">
+          {items.map((s) => (
+            <Link
+              key={s.id}
+              href="/scholarships"
+              className="rounded-2xl bg-white p-5 ring-1 ring-purple-100/60 card-shadow transition hover:-translate-y-0.5 hover:shadow-md"
+            >
+              <p className="text-sm font-bold text-gray-900">{s.name}</p>
+              <p className="mt-0.5 text-xs text-gray-400">{s.provider}</p>
+              <div className="mt-3 flex items-center justify-between">
+                <Badge variant="green">{s.amount}</Badge>
+                <span className="text-xs text-amber-600">Due {formatDate(s.deadline)}</span>
+              </div>
+            </Link>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function EnquiriesTab() {
+  const { enquiries } = useApp();
+  return (
+    <div className="space-y-3">
+      <h3 className="flex items-center gap-2 font-display text-lg font-bold text-gray-900">
+        <MessagesSquare className="h-5 w-5 text-purple-500" /> Admission enquiries
+      </h3>
+      {enquiries.length === 0 ? (
+        <EmptyState
+          icon={MessagesSquare}
+          title="No enquiries yet"
+          description="Submit the Get Admission Help form and our counsellors will contact you. Enquiries appear here."
+          actionHref="/admission"
+          actionLabel="Get admission help"
+        />
+      ) : (
+        enquiries.map((e) => (
+          <div key={e.id} className="rounded-2xl bg-white px-5 py-4 ring-1 ring-purple-100/60 card-shadow">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="text-sm font-bold text-gray-900">{e.course} · {e.name}</p>
+              <Badge variant={e.status === "new" ? "yellow" : e.status === "contacted" ? "blue" : "green"}>{e.status}</Badge>
+            </div>
+            <p className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-gray-400">
+              <span className="flex items-center gap-1"><Phone className="h-3 w-3" /> {e.mobile}</span>
+              <span className="flex items-center gap-1"><MapPin className="h-3 w-3" /> {e.city || e.state || "—"}</span>
+              <span>{formatDate(e.date)}</span>
+            </p>
+            {e.message && <p className="mt-2 rounded-xl bg-slate-50 p-3 text-sm text-slate-600">{e.message}</p>}
+          </div>
+        ))
+      )}
+    </div>
+  );
+}
+
+function NotificationsTab() {
+  const { notifications, markNotificationRead, markAllNotificationsRead } = useApp();
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between">
+        <h3 className="flex items-center gap-2 font-display text-lg font-bold text-gray-900">
+          <Bell className="h-5 w-5 text-amber-500" /> Notifications
+        </h3>
+        {notifications.some((n) => !n.read) && (
+          <button type="button" onClick={markAllNotificationsRead} className="text-xs font-semibold text-purple-700 hover:text-purple-800">
+            Mark all as read
+          </button>
+        )}
+      </div>
+      {notifications.length === 0 ? (
+        <p className="rounded-2xl bg-white py-10 text-center text-sm text-gray-400 ring-1 ring-purple-100/60 card-shadow">
+          No notifications yet.
+        </p>
+      ) : (
+        notifications.map((n) => (
+          <button
+            key={n.id}
+            type="button"
+            onClick={() => markNotificationRead(n.id)}
+            className={`flex w-full items-start gap-3 rounded-2xl px-5 py-4 text-left ring-1 ring-purple-100/60 card-shadow transition hover:-translate-y-0.5 hover:shadow-md ${n.read ? "bg-white opacity-70" : "bg-purple-50/60"}`}
+          >
+            <span className={`mt-1 grid h-8 w-8 shrink-0 place-items-center rounded-lg ${n.read ? "bg-slate-100 text-slate-400" : "bg-purple-600 text-white"}`}>
+              <Bell className="h-4 w-4" />
+            </span>
+            <span className="min-w-0">
+              <span className="block text-sm font-bold text-gray-900">{n.title}</span>
+              <span className="mt-0.5 block text-xs text-gray-500">{n.message}</span>
+              <span className="mt-1 block text-[11px] text-gray-400">{formatDate(n.date)} · {n.type}</span>
+            </span>
+          </button>
+        ))
+      )}
+    </div>
+  );
+}
+
 function SettingsTab() {
   const { prefs, setPrefs } = useApp();
   const rows = [
@@ -526,16 +804,23 @@ function SettingsTab() {
 }
 
 export default function DashboardExplorer() {
-  const [tab, setTab] = useState("overview");
-  const { savedColleges, recentViews, compareList } = useApp();
+  const searchParams = useSearchParams();
+  const initialTab = searchParams.get("tab") ?? "overview";
+  const [tab, setTab] = useState(
+    TABS.some((t) => t.id === initialTab) ? initialTab : "overview",
+  );
+  const { savedColleges, compareList, testHistory, savedScholarships, enquiries, notifications } = useApp();
   const hour = new Date().getHours();
   const greeting = hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
 
   const statItems = [
     { icon: <Heart className="h-5 w-5 text-rose-500" />, label: "Saved colleges", value: savedColleges.length, tone: "bg-rose-50" },
-    { icon: <Eye className="h-5 w-5 text-purple-500" />, label: "Recently viewed", value: recentViews.length, tone: "bg-purple-50" },
+    { icon: <FileQuestion className="h-5 w-5 text-purple-500" />, label: "Mock tests", value: testHistory.length, tone: "bg-purple-50" },
+    { icon: <Award className="h-5 w-5 text-amber-500" />, label: "Scholarships", value: savedScholarships.length, tone: "bg-amber-50" },
     { icon: <Scale className="h-5 w-5 text-blue-500" />, label: "In compare list", value: compareList.length, tone: "bg-blue-50" },
-    { icon: <CalendarClock className="h-5 w-5 text-orange-500" />, label: "Admission deadlines", value: COLLEGES.filter((c) => new Date(c.admission.applicationDeadline) >= new Date()).length, tone: "bg-orange-50" },
+    { icon: <CalendarClock className="h-5 w-5 text-orange-500" />, label: "Deadlines ahead", value: COLLEGES.filter((c) => new Date(c.admission.applicationDeadline) >= new Date()).length, tone: "bg-orange-50" },
+    { icon: <MessagesSquare className="h-5 w-5 text-green-500" />, label: "Enquiries", value: enquiries.length, tone: "bg-green-50" },
+    { icon: <Bell className="h-5 w-5 text-red-400" />, label: "Alerts", value: notifications.length, tone: "bg-red-50" },
   ];
 
   return (
@@ -588,9 +873,14 @@ export default function DashboardExplorer() {
           </div>
         )}
         {tab === "saved" && <SavedTab />}
+        {tab === "tests" && <TestsTab />}
+        {tab === "profile" && <ProfileTab />}
         {tab === "recent" && <RecentTab />}
         {tab === "searches" && <SearchesTab />}
         {tab === "comparisons" && <ComparisonsTab />}
+        {tab === "scholarships" && <ScholarshipsTab />}
+        {tab === "enquiries" && <EnquiriesTab />}
+        {tab === "notifications" && <NotificationsTab />}
         {tab === "settings" && <SettingsTab />}
       </div>
     </section>

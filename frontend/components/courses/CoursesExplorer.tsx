@@ -31,7 +31,7 @@ export default function CoursesExplorer() {
         <p className="mt-2 text-sm text-gray-600 sm:text-base">
           {"Discover degrees, programs and specializations offered across India's top colleges."}
         </p>
-        <div className="mt-6 flex items-center gap-2 rounded-2xl border-2 border-gray-200 bg-white p-1.5 shadow-sm focus-within:border-purple-400">
+        <div className="mt-6 flex items-center gap-2 rounded-2xl border-2 border-gray-200 bg-white p-1.5 shadow-sm focus-within:border-blue-400">
           <Search className="ml-2.5 h-5 w-5 text-blue-600" />
           <label className="sr-only" htmlFor="course-search">Search courses</label>
           <input
@@ -39,7 +39,8 @@ export default function CoursesExplorer() {
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Search by course name or stream…"
-            className="h-10 min-w-0 flex-1 bg-transparent text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none"
+            className="h-10 min-w-0 flex-1 border-none bg-transparent text-sm text-gray-900 placeholder:text-gray-400 outline-none ring-0 focus:border-none focus:outline-none focus:ring-0 focus-visible:border-none focus-visible:outline-none focus-visible:ring-0"
+            style={{ outline: "none", boxShadow: "none" }}
           />
         </div>
         <div className="mt-4 flex flex-wrap gap-2">
@@ -83,9 +84,11 @@ export default function CoursesExplorer() {
                   <Badge variant={c.hot ? "orange" : "blue"} className="w-fit">
                     {c.level}
                   </Badge>
-                  <h3 className="font-display mt-3 text-base font-bold leading-snug text-gray-900">
-                    {c.name}
-                  </h3>
+                  <Link href={`/courses/${c.slug}`}>
+                    <h3 className="font-display mt-3 text-base font-bold leading-snug text-gray-900 group-hover:text-purple-700">
+                      {c.name}
+                    </h3>
+                  </Link>
                   <p className="mt-2 flex-1 text-sm leading-relaxed text-gray-500 line-clamp-3">
                     {c.description}
                   </p>
@@ -104,12 +107,20 @@ export default function CoursesExplorer() {
                     </div>
                   </dl>
 
-                  <Link
-                    href={`/colleges?q=${encodeURIComponent(c.degree)}`}
-                    className="mt-4 inline-flex h-10 items-center justify-center gap-1.5 rounded-xl bg-purple-50 text-sm font-semibold text-purple-700 transition hover:bg-purple-100"
-                  >
-                    Find colleges <ArrowRight className="h-4 w-4" />
-                  </Link>
+                  <div className="mt-4 grid grid-cols-1 gap-2">
+                    <Link
+                      href={`/courses/${c.slug}`}
+                      className="inline-flex h-10 items-center justify-center gap-1.5 rounded-xl bg-purple-600 text-sm font-semibold text-white transition hover:bg-purple-700"
+                    >
+                      View course details <ArrowRight className="h-4 w-4" />
+                    </Link>
+                    <Link
+                      href={`/colleges?q=${encodeURIComponent(c.degree)}`}
+                      className="inline-flex h-10 items-center justify-center gap-1.5 rounded-xl bg-purple-50 text-sm font-semibold text-purple-700 transition hover:bg-purple-100"
+                    >
+                      Find colleges
+                    </Link>
+                  </div>
                 </article>
               );
             })}

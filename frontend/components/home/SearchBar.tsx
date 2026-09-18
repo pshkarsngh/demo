@@ -121,15 +121,15 @@ export function SearchBar({ placeholder, autoFocus, initial, onSearch, id, varia
           "flex items-center gap-2 bg-white transition-all",
           variant === "hero"
             ? cn(
-                "h-16 rounded-full border-2 white/95 shadow-[0_24px_60px_-16px_rgba(2,8,28,0.5)]",
+                "h-16 rounded-full border-2 border-white/95 shadow-[0_24px_60px_-16px_rgba(2,8,28,0.5)]",
                 focused
-                  ? "border-brand/80 shadow-[0_0_0_5px_rgba(124,58,237,0.25),0_28px_70px_-18px_rgba(37,99,235,0.55)]"
+                  ? "border-white shadow-[0_0_0_3px_rgba(255,255,255,0.45),0_28px_70px_-18px_rgba(2,8,28,0.6)]"
                   : "border-white/90",
               )
             : cn(
                 "h-auto rounded-2xl border-2",
                 focused
-                  ? "border-purple-400 shadow-lg shadow-purple-500/10"
+                  ? "border-blue-400 shadow-lg shadow-blue-500/10"
                   : "border-gray-200 shadow-md",
               ),
         )}
@@ -164,34 +164,38 @@ export function SearchBar({ placeholder, autoFocus, initial, onSearch, id, varia
           aria-autocomplete="list"
           placeholder={placeholder ?? "Search by college, course, city or specialization…"}
           className={cn(
-            "min-w-0 flex-1 bg-transparent px-1 text-[15px] text-gray-900 placeholder:text-gray-400 focus:outline-none",
+            "min-w-0 flex-1 border-none bg-transparent px-1 text-[15px] text-gray-900 placeholder:text-gray-400 outline-none ring-0 focus:border-none focus:outline-none focus:ring-0 focus-visible:border-none focus-visible:outline-none focus-visible:ring-0",
             variant === "hero" ? "h-16" : "h-14",
           )}
+          style={{ outline: "none", boxShadow: "none" }}
         />
         {value && (
           <button
+            type="button"
             aria-label="Clear search"
             onClick={() => {
               setValue("");
               inputRef.current?.focus();
             }}
-            className="mr-1 grid h-7 w-7 place-items-center rounded-full text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+            className="mr-1 grid h-7 w-7 place-items-center rounded-full text-gray-400 hover:bg-gray-100 hover:text-gray-600 focus:outline-none focus-visible:outline-none"
           >
             <X className="h-4 w-4" />
           </button>
         )}
         {variant === "hero" ? (
           <button
+            type="button"
             aria-label="Submit search"
             onClick={() => submit(value)}
-            className="mr-1.5 grid h-12 w-12 shrink-0 place-items-center rounded-full bg-warm-gradient text-white shadow-lg shadow-orange-500/40 transition hover:scale-[1.03] hover:brightness-110 active:scale-95"
+            className="mr-1.5 grid h-12 w-12 shrink-0 place-items-center rounded-full bg-warm-gradient text-white shadow-lg shadow-orange-500/40 transition hover:scale-[1.03] hover:brightness-110 active:scale-95 focus:outline-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-400 focus-visible:ring-offset-2"
           >
             <ArrowRight className="h-5 w-5" />
           </button>
         ) : (
           <button
+            type="button"
             onClick={() => submit(value)}
-            className="mr-2 hidden h-10 shrink-0 items-center gap-1.5 rounded-xl bg-orange-500 px-5 text-sm font-semibold text-white shadow-sm transition hover:bg-orange-600 sm:inline-flex"
+            className="mr-2 hidden h-10 shrink-0 items-center gap-1.5 rounded-xl bg-orange-500 px-5 text-sm font-semibold text-white shadow-sm transition hover:bg-orange-600 focus:outline-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-400 sm:inline-flex"
           >
             <Search className="h-4 w-4" /> Search
           </button>

@@ -11,6 +11,10 @@ import {
   IndianRupee,
   RotateCcw,
   X,
+  Layers,
+  CheckSquare,
+  CircleCheck,
+  Star,
 } from "lucide-react";
 import type { SearchFilters, Sector } from "@/lib/types";
 import {
@@ -21,8 +25,16 @@ import {
   ALL_EXAMS,
   ALL_ACCREDITATIONS,
   FEE_RANGES,
+  ALL_DISTRICTS,
+  ALL_UNIVERSITIES,
 } from "@/lib/data";
 import { cn } from "@/lib/utils";
+
+const ADMISSION_LABELS: Record<string, string> = {
+  open: "Admissions open",
+  closed: "Admissions closed",
+  upcoming: "Admissions upcoming",
+};
 
 export function FilterGroup({
   title,
@@ -92,7 +104,7 @@ interface FiltersProps {
 }
 
 export function FiltersPanel({ filters, onChange, onClear, onClose }: FiltersProps) {
-  const toggle = <T,>(arrKey: "states" | "cities" | "courseNames" | "sectors" | "types" | "exams" | "accreditations", value: T) => {
+  const toggle = <T,>(arrKey: "states" | "cities" | "courseNames" | "sectors" | "types" | "exams" | "accreditations" | "districts" | "universities" | "admissionStatuses", value: T) => {
     const current = (filters[arrKey] as T[]) ?? [];
     const exists = current.some((x) => String(x) === String(value));
     onChange({
@@ -108,6 +120,10 @@ export function FiltersPanel({ filters, onChange, onClear, onClose }: FiltersPro
     (filters.types?.length ?? 0) +
     (filters.exams?.length ?? 0) +
     (filters.accreditations?.length ?? 0) +
+    (filters.districts?.length ?? 0) +
+    (filters.universities?.length ?? 0) +
+    (filters.admissionStatuses?.length ?? 0) +
+    (filters.minRating !== null ? 1 : 0) +
     (filters.hostel === true ? 1 : 0) +
     (filters.placementRate === true ? 1 : 0) +
     (filters.minFee !== null ? 1 : 0);
@@ -231,6 +247,58 @@ export function FiltersPanel({ filters, onChange, onClear, onClose }: FiltersPro
                 label={a}
                 checked={(filters.accreditations ?? []).includes(a)}
                 onChange={() => toggle("accreditations", a)}
+              />
+            ))}
+          </div>
+        </FilterGroup>
+
+        <FilterGroup title="Rating" icon={<Star className="h-3.5 w-3.5 text-amber-500" />}>
+          <div className="space-y-0.5">
+            {[4.5, 4.0, 3.5].map((r) => (
+              <CheckboxRow
+                key={r}
+                label={`${r}★ & above`}
+                checked={filters.minRating === r}
+                onChange={(v) => onChange({ minRating: v ? r : null })}
+              />
+            ))}
+          </div>
+        </FilterGroup>
+
+        <FilterGroup title="Admission status" icon={<CircleCheck className="h-3.5 w-3.5 text-green-500" />}>
+          <div className="space-y-0.5">
+            {(["open", "closed", "upcoming"] as const).map((s) => (
+              <CheckboxRow
+                key={s}
+                label={ADMISSION_LABELS[s]}
+                checked={(filters.admissionStatuses ?? []).includes(s)}
+                onChange={() => toggle("admissionStatuses", s)}
+              />
+            ))}
+          </div>
+        </FilterGroup>
+
+        <FilterGroup title="District" icon={<Layers className="h-3.5 w-3.5 text-blue-500" />}>
+          <div className="space-y-0.5">
+            {ALL_DISTRICTS.map((d) => (
+              <CheckboxRow
+                key={d}
+                label={d}
+                checked={(filters.districts ?? []).includes(d)}
+                onChange={() => toggle("districts", d)}
+              />
+            ))}
+          </div>
+        </FilterGroup>
+
+        <FilterGroup title="University / Board" icon={<CheckSquare className="h-3.5 w-3.5 text-purple-500" />}>
+          <div className="space-y-0.5">
+            {ALL_UNIVERSITIES.map((u) => (
+              <CheckboxRow
+                key={u}
+                label={u}
+                checked={(filters.universities ?? []).includes(u)}
+                onChange={() => toggle("universities", u)}
               />
             ))}
           </div>

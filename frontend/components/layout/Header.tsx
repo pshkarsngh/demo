@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import {
   Menu,
@@ -14,18 +14,38 @@ import {
   BookOpen,
   Building2,
   LayoutDashboard,
+  Sparkles,
+  FileQuestion,
+  CalendarDays,
+  MessagesSquare,
+  PenLine,
+  Phone,
+  ChevronDown,
+  HelpCircle,
+  Newspaper,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ButtonLink } from "@/components/ui/Button";
 import { usePathname } from "next/navigation";
 
-const NAV = [
+const PRIMARY_NAV = [
   { label: "Colleges", href: "/colleges", icon: Building2 },
   { label: "Courses", href: "/courses", icon: GraduationCap },
-  { label: "Compare", href: "/compare", icon: Scale },
+  { label: "Predictor", href: "/college-predictor", icon: Sparkles },
   { label: "Scholarships", href: "/scholarships", icon: Award },
+  { label: "Mock Tests", href: "/mock-tests", icon: FileQuestion },
+  { label: "Exams", href: "/exams", icon: CalendarDays },
+];
+
+const MORE_NAV = [
+  { label: "Compare", href: "/compare", icon: Scale },
+  { label: "AI Assistant", href: "/ask-ai", icon: MessagesSquare },
+  { label: "Reviews", href: "/reviews", icon: PenLine },
+  { label: "Blog", href: "/blog", icon: Newspaper },
   { label: "Resources", href: "/resources", icon: BookOpen },
   { label: "About", href: "/about", icon: Compass },
+  { label: "Contact", href: "/contact", icon: Phone },
+  { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
 ];
 
 export function Logo({ dark = false, showTagline = true }: { dark?: boolean; showTagline?: boolean }) {
@@ -60,8 +80,10 @@ export function Logo({ dark = false, showTagline = true }: { dark?: boolean; sho
 
 export function Header() {
   const [open, setOpen] = useState(false);
+  const [moreOpen, setMoreOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
   const pathname = usePathname();
+  const moreRef = useRef<HTMLDivElement | null>(null);
 
   const heroMode = pathname === "/" && !scrolled && !open;
 
@@ -79,6 +101,17 @@ export function Header() {
     };
   }, [open]);
 
+  useEffect(() => {
+    const onClick = (e: MouseEvent) => {
+      if (moreRef.current && !moreRef.current.contains(e.target as Node)) setMoreOpen(false);
+    };
+    document.addEventListener("mousedown", onClick);
+    return () => document.removeEventListener("mousedown", onClick);
+  }, []);
+
+  const isActive = (href: string) => pathname === href || pathname.startsWith(href + "/");
+  const isMoreActive = MORE_NAV.some((i) => isActive(i.href));
+
   return (
     <header
       className={cn(
@@ -89,15 +122,15 @@ export function Header() {
       <div className="mx-auto flex h-16 max-w-7xl items-center justify-between gap-4 px-4 sm:px-6 lg:h-[72px] lg:px-8">
         <Logo dark={heroMode} showTagline={true} />
 
-        <nav aria-label="Primary" className="hidden items-center gap-1 lg:flex">
-          {NAV.map((item) => {
-            const active = pathname === item.href || pathname.startsWith(item.href + "/");
+        <nav aria-label="Primary" className="hidden items-center gap-0.5 lg:flex">
+          {PRIMARY_NAV.map((item) => {
+            const active = isActive(item.href);
             return (
               <Link
                 key={item.href}
                 href={item.href}
                 className={cn(
-                  "relative rounded-lg px-3.5 py-2 text-[14px] font-medium transition-colors",
+                  "relative rounded-lg px-3 py-2 text-[14px] font-medium transition-colors",
                   heroMode
                     ? active
                       ? "text-white font-semibold"
@@ -111,9 +144,52 @@ export function Header() {
               </Link>
             );
           })}
+
+          <div className="relative" ref={moreRef}>
+            <button
+              type="button"
+              aria-expanded={moreOpen}
+              onClick={() => setMoreOpen((o) => !o)}
+              className={cn(
+                "flex items-center gap-1 rounded-lg px-3 py-2 text-[14px] font-medium transition-colors",
+                heroMode
+                  ? isMoreActive
+                    ? "text-white font-semibold"
+                    : "text-white/80 hover:text-white"
+                  : isMoreActive
+                    ? "text-purple-700 font-semibold"
+                    : "text-slate-600 hover:text-purple-700",
+              )}
+            >
+              More
+              <ChevronDown className={cn("h-4 w-4 transition-transform", moreOpen && "rotate-180")} />
+            </button>
+            {moreOpen && (
+              <div className="absolute right-0 top-full mt-2 w-56 overflow-hidden rounded-2xl border border-purple-100 bg-white p-1.5 shadow-xl animate-fade-up">
+                {MORE_NAV.map((item) => {
+                  const Icon = item.icon;
+                  const active = isActive(item.href);
+                  return (
+                    <Link
+                      key={item.href}
+                      href={item.href}
+                      onClick={() => setMoreOpen(false)}
+                      className={cn(
+                        "flex items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm font-medium transition-colors",
+                        active ? "bg-purple-50 text-purple-800" : "text-gray-700 hover:bg-gray-50",
+                      )}
+                    >
+                      <Icon className="h-4 w-4 text-purple-500" />
+                      {item.label}
+                    </Link>
+                  );
+                })}
+              </div>
+            )}
+          </div>
         </nav>
 
-        <div className="hidden items-center gap-3 lg:flex">
+        <div className="hidden items-center gap-2.5 lg:flex">
           <Link
             href="/colleges"
             aria-label="Search colleges"
@@ -127,6 +203,10 @@ export function Header() {
           >
             <Search className="h-[18px] w-[18px]" />
           </Link>
+          <ButtonLink href="/admission" variant="accent" size="sm" className="rounded-full">
+            <HelpCircle className="h-4 w-4" />
+            Get Admission Help
+          </ButtonLink>
           {heroMode ? (
             <>
               <Link
@@ -139,7 +219,7 @@ export function Header() {
                 href="/login?mode=signup"
                 className="inline-flex h-9 items-center gap-1.5 rounded-full bg-gradient-to-r from-orange-500 to-orange-600 px-4 text-sm font-bold text-white shadow-md shadow-orange-500/30 transition hover:brightness-110"
               >
-                Get Started <ArrowRight className="h-4 w-4" />
+                Register <ArrowRight className="h-4 w-4" />
               </Link>
             </>
           ) : (
@@ -147,8 +227,8 @@ export function Header() {
               <ButtonLink href="/login" variant="secondary" size="sm" className="rounded-full">
                 Log in
               </ButtonLink>
-              <ButtonLink href="/login?mode=signup" variant="accent" size="sm" className="rounded-full">
-                Get Started <ArrowRight className="h-4 w-4" />
+              <ButtonLink href="/login?mode=signup" variant="outline" size="sm" className="rounded-full">
+                Register
               </ButtonLink>
             </>
           )}
@@ -171,11 +251,11 @@ export function Header() {
 
       {open && (
         <div className="lg:hidden">
-          <div className="mx-4 mb-4 overflow-hidden rounded-2xl border border-purple-100 bg-white shadow-xl animate-fade-up">
+          <div className="mx-4 mb-4 max-h-[calc(100vh-5rem)] overflow-y-auto rounded-2xl border border-purple-100 bg-white shadow-xl animate-fade-up scroll-thin">
             <nav aria-label="Mobile" className="flex flex-col p-2">
-              {NAV.map((item) => {
+              {[...PRIMARY_NAV, ...MORE_NAV, { label: "Home", href: "/", icon: Compass }].map((item) => {
                 const Icon = item.icon;
-                const active = pathname === item.href || pathname.startsWith(item.href + "/");
+                const active = isActive(item.href);
                 return (
                   <Link
                     key={item.href}
@@ -192,20 +272,20 @@ export function Header() {
                 );
               })}
               <div className="mt-2 grid grid-cols-1 gap-2 border-t border-gray-100 pt-3">
+                <ButtonLink href="/admission" variant="accent" size="md" onClick={() => setOpen(false)}>
+                  <HelpCircle className="h-4 w-4" />
+                  Get Admission Help
+                </ButtonLink>
                 <ButtonLink href="/colleges" variant="outline" size="md" onClick={() => setOpen(false)}>
                   <Search className="h-4 w-4" />
                   Search colleges
-                </ButtonLink>
-                <ButtonLink href="/dashboard" variant="outline" size="md" onClick={() => setOpen(false)}>
-                  <LayoutDashboard className="h-4 w-4" />
-                  Dashboard
                 </ButtonLink>
                 <div className="flex gap-2">
                   <ButtonLink href="/login" variant="secondary" size="md" className="flex-1" onClick={() => setOpen(false)}>
                     Log in
                   </ButtonLink>
-                  <ButtonLink href="/login?mode=signup" variant="accent" size="md" className="flex-1" onClick={() => setOpen(false)}>
-                    Get Started <ArrowRight className="h-4 w-4" />
+                  <ButtonLink href="/login?mode=signup" variant="outline" size="md" className="flex-1" onClick={() => setOpen(false)}>
+                    Register
                   </ButtonLink>
                 </div>
               </div>

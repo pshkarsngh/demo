@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import CollegesExplorer from "@/components/college/CollegesExplorer";
+import { AdmissionHelpBanner } from "@/components/admission/AdmissionHelpBanner";
 
 export const metadata: Metadata = {
   title: "Explore Colleges",
@@ -8,5 +9,10 @@ export const metadata: Metadata = {
 };
 
 export default function Page() {
-  return <CollegesExplorer />;
+  return (
+    <>
+      <CollegesExplorer />
+      <AdmissionHelpBanner />
+    </>
+  );
 }

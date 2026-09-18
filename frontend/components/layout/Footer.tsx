@@ -43,28 +43,29 @@ const FOOTER_COLS = [
     links: [
       { label: "Colleges", href: "/colleges" },
       { label: "Courses", href: "/courses" },
-      { label: "Mock Tests", href: "/resources" },
+      { label: "Compare Colleges", href: "/compare" },
+      { label: "College Predictor", href: "/college-predictor" },
       { label: "Scholarships", href: "/scholarships" },
-      { label: "Resources", href: "/resources" },
+    ],
+  },
+  {
+    title: "Students",
+    links: [
+      { label: "Mock Tests", href: "/mock-tests" },
+      { label: "Exams", href: "/exams" },
+      { label: "AI Assistant", href: "/ask-ai" },
+      { label: "Reviews", href: "/reviews" },
+      { label: "Get Admission Help", href: "/admission" },
     ],
   },
   {
     title: "Company",
     links: [
       { label: "About Us", href: "/about" },
-      { label: "Careers", href: "/about" },
-      { label: "Blog", href: "/resources" },
-      { label: "Contact Us", href: "/about" },
-      { label: "Help Center", href: "/about" },
-    ],
-  },
-  {
-    title: "Legal",
-    links: [
-      { label: "Privacy Policy", href: "/about" },
-      { label: "Terms of Service", href: "/about" },
-      { label: "Cookie Policy", href: "/about" },
-      { label: "Disclaimer", href: "/about" },
+      { label: "Blog", href: "/blog" },
+      { label: "Resources", href: "/resources" },
+      { label: "Contact Us", href: "/contact" },
+      { label: "Help Center", href: "/contact" },
     ],
   },
 ];
@@ -168,7 +169,7 @@ export function Footer() {
         {/* Bottom copyright line */}
         <div className="mt-12 border-t border-gray-100 pt-6 text-center sm:text-right">
           <p className="text-xs text-gray-400">
-            © 2024 padhaanewala. All rights reserved.
+            © 2026 padhaanewala. All rights reserved.
           </p>
         </div>
       </div>

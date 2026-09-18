@@ -63,6 +63,10 @@ export function applyFilters(c: College, f: SearchFilters): boolean {
   if (f.query && !matchesCollege(c, f.query)) return false;
   if (f.states.length && !f.states.includes(c.state)) return false;
   if (f.cities.length && !f.cities.includes(c.city)) return false;
+  if (f.districts.length && !f.districts.includes(c.district)) return false;
+  if (f.universities.length && !f.universities.includes(c.university)) return false;
+  if (f.admissionStatuses.length && !f.admissionStatuses.includes(c.admissionStatus)) return false;
+  if (f.minRating !== null && c.rating < f.minRating) return false;
 
   const courseNames = f.courseNames ?? [];
   if (courseNames.length) {
@@ -150,6 +154,16 @@ export const ALL_CITIES: string[] = [
 export const ALL_TYPES: string[] = [
   ...Array.from(new Set(COLLEGES.map((c) => c.type))).sort(),
 ];
+
+export const ALL_DISTRICTS: string[] = [
+  ...Array.from(new Set(COLLEGES.map((c) => c.district))).sort(),
+];
+
+export const ALL_UNIVERSITIES: string[] = [
+  ...Array.from(new Set(COLLEGES.map((c) => c.university))).sort(),
+];
+
+export const ALL_ADMISSION_STATUSES = ["open", "closed", "upcoming"] as const;
 
 export const ALL_EXAMS: string[] = [
   ...Array.from(new Set(COLLEGES.flatMap((c) => c.admission.entranceExams))).sort(),

@@ -7,7 +7,13 @@ export const metadata: Metadata = {
 };
 
 import CoursesExplorer from "@/components/courses/CoursesExplorer";
+import { AdmissionHelpBanner } from "@/components/admission/AdmissionHelpBanner";
 
 export default function Page() {
-  return <CoursesExplorer />;
+  return (
+    <>
+      <CoursesExplorer />
+      <AdmissionHelpBanner />
+    </>
+  );
 }

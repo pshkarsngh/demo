@@ -1,5 +1,6 @@
 import type { College } from "@/lib/types";
 import { COLLEGES } from "./colleges";
+import { COURSE_DETAILS } from "./courseDetails";
 
 export interface CourseMeta {
   slug: string;
@@ -165,4 +166,22 @@ export function searchCourses(query: string): CourseMeta[] {
   return COURSES.filter((c) =>
     `${c.name} ${c.degree} ${c.description} ${c.level}`.toLowerCase().includes(q),
   );
+  }
+
+export function getCourseBySlug(slug: string): CourseMeta | undefined {
+  return COURSES.find((c) => c.slug === slug);
+}
+
+export function getRelatedCourses(slug: string): CourseMeta[] {
+  const detail = COURSE_DETAILS[slug];
+  if (!detail) return COURSES.filter((c) => c.slug !== slug).slice(0, 3);
+  const related = detail.relatedSlugs
+    .map((s) => getCourseBySlug(s))
+    .filter((c): c is CourseMeta => Boolean(c));
+  const extra = COURSES.filter((c) => c.slug !== slug && !detail.relatedSlugs.includes(c.slug)).slice(0, 3);
+  return [...related, ...extra].slice(0, 4);
+}
+
+export function getCourseDetail(slug: string) {
+  return COURSE_DETAILS[slug];
 }

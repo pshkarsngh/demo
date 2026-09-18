@@ -8,6 +8,7 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { AddCollegeButton } from "@/components/compare/parts";
 import ComparisonTable from "@/components/compare/ComparisonTable";
 import ComparisonCards from "@/components/compare/ComparisonCards";
+import { MiniChat } from "@/components/ai/MiniChat";
 
 export default function CompareExplorer() {
   const { compareList, toggleCompare, clearCompare, compareHistory, recordComparison, showToast } = useApp();
@@ -83,6 +84,10 @@ export default function CompareExplorer() {
           You have {compareHistory.length} previous comparison{compareHistory.length > 1 ? "s" : ""} saved on your dashboard.
         </p>
       )}
+
+      <div className="mt-10">
+        <MiniChat colleges={colleges} />
+      </div>
     </section>
   );
 }

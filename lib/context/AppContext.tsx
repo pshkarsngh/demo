@@ -10,6 +10,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import type { AdmissionEnquiry, MockTestResult, NotificationItem, Review, StudentProfile } from "@/lib/types";
 
 export interface ToastItem {
   id: number;
@@ -29,6 +30,7 @@ export interface NotificationPrefs {
 interface AppContextValue {
   savedColleges: string[];
   savedCourses: string[];
+  savedScholarships: string[];
   compareList: string[];
   recentViews: string[];
   recentSearches: string[];
@@ -36,12 +38,20 @@ interface AppContextValue {
   compareHistory: string[][];
   prefs: NotificationPrefs;
   toasts: ToastItem[];
+  profile: StudentProfile | null;
+  enquiries: AdmissionEnquiry[];
+  testHistory: MockTestResult[];
+  notifications: NotificationItem[];
+  reviews: Review[];
 
   isSaved: (id: string) => boolean;
   toggleSave: (id: string, name?: string) => void;
 
   isCourseSaved: (slug: string) => boolean;
   toggleCourseSave: (slug: string, name?: string) => void;
+
+  isScholarshipSaved: (id: string) => boolean;
+  toggleScholarshipSave: (id: string, name?: string) => void;
 
   isComparing: (id: string) => boolean;
   compareFull: boolean;
@@ -54,6 +64,13 @@ interface AppContextValue {
   addRecentLocation: (loc: string) => void;
 
   setPrefs: (p: Partial<NotificationPrefs>) => void;
+
+  setProfile: (p: StudentProfile) => void;
+  addEnquiry: (e: Omit<AdmissionEnquiry, "id" | "date" | "status">) => void;
+  addTestResult: (r: MockTestResult) => void;
+  markNotificationRead: (id: string) => void;
+  markAllNotificationsRead: () => void;
+  addReview: (r: Review) => void;
 
   showToast: (t: Omit<ToastItem, "id">) => void;
   dismissToast: (id: number) => void;
@@ -84,11 +101,17 @@ function save(key: string, value: unknown) {
 export function AppProvider({ children }: { children: ReactNode }) {
   const [savedColleges, setSavedColleges] = useState<string[]>([]);
   const [savedCourses, setSavedCourses] = useState<string[]>([]);
+  const [savedScholarships, setSavedScholarships] = useState<string[]>([]);
   const [compareList, setCompareList] = useState<string[]>([]);
   const [recentViews, setRecentViews] = useState<string[]>([]);
   const [recentSearches, setRecentSearches] = useState<string[]>([]);
   const [recentLocations, setRecentLocations] = useState<string[]>([]);
   const [compareHistory, setCompareHistory] = useState<string[][]>([]);
+  const [profile, setProfileState] = useState<StudentProfile | null>(null);
+  const [enquiries, setEnquiries] = useState<AdmissionEnquiry[]>([]);
+  const [testHistory, setTestHistory] = useState<MockTestResult[]>([]);
+  const [notifications, setNotifications] = useState<NotificationItem[]>([]);
+  const [reviews, setReviews] = useState<Review[]>([]);
   const [prefs, setPrefsState] = useState<NotificationPrefs>({
     admissionDeadlines: true,
     scholarshipAlerts: true,
@@ -104,11 +127,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setSavedColleges(load("cp_saved", []));
     setSavedCourses(load("cp_saved_courses", []));
+    setSavedScholarships(load("cp_saved_scholarships", []));
     setCompareList(load("cp_compare", []));
     setRecentViews(load("cp_recent_views", []));
     setRecentSearches(load("cp_recent_searches", []));
     setRecentLocations(load("cp_recent_locations", []));
     setCompareHistory(load("cp_compare_history", []));
+    setProfileState(load("cp_profile", null));
+    setEnquiries(load("cp_enquiries", []));
+    setTestHistory(load("cp_test_history", []));
+    setNotifications(load("cp_notifications", []));
+    setReviews(load("cp_reviews", []));
     hydrated.current = true;
   }, []);
 
@@ -120,6 +149,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if (!hydrated.current) return;
     save("cp_saved_courses", savedCourses);
   }, [savedCourses]);
+  useEffect(() => {
+    if (!hydrated.current) return;
+    save("cp_saved_scholarships", savedScholarships);
+  }, [savedScholarships]);
   useEffect(() => {
     if (!hydrated.current) return;
     save("cp_compare", compareList);
@@ -140,6 +173,26 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if (!hydrated.current) return;
     save("cp_compare_history", compareHistory);
   }, [compareHistory]);
+  useEffect(() => {
+    if (!hydrated.current) return;
+    save("cp_profile", profile);
+  }, [profile]);
+  useEffect(() => {
+    if (!hydrated.current) return;
+    save("cp_enquiries", enquiries);
+  }, [enquiries]);
+  useEffect(() => {
+    if (!hydrated.current) return;
+    save("cp_test_history", testHistory);
+  }, [testHistory]);
+  useEffect(() => {
+    if (!hydrated.current) return;
+    save("cp_notifications", notifications);
+  }, [notifications]);
+  useEffect(() => {
+    if (!hydrated.current) return;
+    save("cp_reviews", reviews);
+  }, [reviews]);
 
   const dismissToast = useCallback((id: number) => {
     setToasts((prev) => prev.filter((t) => t.id !== id));
@@ -254,10 +307,69 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setPrefsState((prev) => ({ ...prev, ...p }));
   }, []);
 
+  const toggleScholarshipSave = useCallback(
+    (id: string, name?: string) => {
+      setSavedScholarships((prev) => {
+        const exists = prev.includes(id);
+        if (exists) {
+          showToast({ variant: "info", title: "Scholarship removed", description: name ? `${name} removed.` : undefined });
+          return prev.filter((x) => x !== id);
+        }
+        showToast({ variant: "success", title: "Scholarship saved", description: name ? `${name} saved to your dashboard.` : undefined });
+        return [id, ...prev];
+      });
+    },
+    [showToast],
+  );
+
+  const setProfile = useCallback((p: StudentProfile) => {
+    setProfileState(p);
+    showToast({ variant: "success", title: "Profile updated", description: "Your preferences were saved." });
+  }, [showToast]);
+
+  const addEnquiry = useCallback(
+    (e: Omit<AdmissionEnquiry, "id" | "date" | "status">) => {
+      const enquiry: AdmissionEnquiry = {
+        ...e,
+        id: `enq-${Date.now()}`,
+        date: new Date().toISOString().slice(0, 10),
+        status: "new",
+      };
+      setEnquiries((prev) => [enquiry, ...prev].slice(0, 30));
+      showToast({
+        variant: "success",
+        title: "Enquiry submitted",
+        description: "Thank you. Our counsellor will contact you.",
+      });
+    },
+    [showToast],
+  );
+
+  const addTestResult = useCallback((r: MockTestResult) => {
+    setTestHistory((prev) => [r, ...prev].slice(0, 40));
+  }, []);
+
+  const markNotificationRead = useCallback((id: string) => {
+    setNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, read: true } : n)));
+  }, []);
+
+  const markAllNotificationsRead = useCallback(() => {
+    setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
+  }, []);
+
+  const addReview = useCallback(
+    (r: Review) => {
+      setReviews((prev) => [r, ...prev].slice(0, 20));
+      showToast({ variant: "success", title: "Review submitted", description: "Thank you for sharing your experience." });
+    },
+    [showToast],
+  );
+
   const value = useMemo<AppContextValue>(
     () => ({
       savedColleges,
       savedCourses,
+      savedScholarships,
       compareList,
       recentViews,
       recentSearches,
@@ -265,10 +377,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
       compareHistory,
       prefs,
       toasts,
+      profile,
+      enquiries,
+      testHistory,
+      notifications,
+      reviews,
       isSaved: (id) => savedColleges.includes(id),
       toggleSave,
       isCourseSaved: (slug) => savedCourses.includes(slug),
       toggleCourseSave,
+      isScholarshipSaved: (id) => savedScholarships.includes(id),
+      toggleScholarshipSave,
       isComparing: (id) => compareList.includes(id),
       compareFull: compareList.length >= MAX_COMPARE,
       toggleCompare,
@@ -278,12 +397,19 @@ export function AppProvider({ children }: { children: ReactNode }) {
       addRecentSearch,
       addRecentLocation,
       setPrefs,
+      setProfile,
+      addEnquiry,
+      addTestResult,
+      markNotificationRead,
+      markAllNotificationsRead,
+      addReview,
       showToast,
       dismissToast,
     }),
     [
       savedColleges,
       savedCourses,
+      savedScholarships,
       compareList,
       recentViews,
       recentSearches,
@@ -291,8 +417,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
       compareHistory,
       prefs,
       toasts,
+      profile,
+      enquiries,
+      testHistory,
+      notifications,
+      reviews,
       toggleSave,
       toggleCourseSave,
+      toggleScholarshipSave,
       toggleCompare,
       clearCompare,
       recordComparison,
@@ -300,6 +432,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
       addRecentSearch,
       addRecentLocation,
       setPrefs,
+      setProfile,
+      addEnquiry,
+      addTestResult,
+      markNotificationRead,
+      markAllNotificationsRead,
+      addReview,
       showToast,
       dismissToast,
     ],

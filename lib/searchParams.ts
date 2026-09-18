@@ -15,6 +15,10 @@ export function defaultFilters(): SearchFilters {
     minFee: null,
     maxFee: null,
     sortBy: "relevance",
+    districts: [],
+    universities: [],
+    admissionStatuses: [],
+    minRating: null,
   };
 }
 
@@ -32,6 +36,10 @@ export function parseSearchParams(sp: URLSearchParams): { filters: SearchFilters
   filters.placementRate = sp.get("placement") === "1" ? true : sp.get("placement") === "0" ? false : null;
   filters.minFee = sp.get("minFee") ? Number(sp.get("minFee")) : null;
   filters.maxFee = sp.get("maxFee") ? Number(sp.get("maxFee")) : null;
+  filters.districts = sp.getAll("district");
+  filters.universities = sp.getAll("university");
+  filters.admissionStatuses = sp.getAll("status") as SearchFilters["admissionStatuses"];
+  filters.minRating = sp.get("rating") ? Number(sp.get("rating")) : null;
   const sort = sp.get("sort") as SortKey | null;
   if (sort && ["relevance", "rating", "fees-asc", "fees-desc", "placement", "reviews", "name"].includes(sort)) {
     filters.sortBy = sort;
@@ -54,6 +62,10 @@ export function serializeSearch(filters: SearchFilters, page: number): string {
   if (filters.placementRate !== null) sp.set("placement", filters.placementRate ? "1" : "0");
   if (filters.minFee !== null) sp.set("minFee", String(filters.minFee));
   if (filters.maxFee !== null) sp.set("maxFee", String(filters.maxFee));
+  filters.districts.forEach((s) => sp.append("district", s));
+  filters.universities.forEach((s) => sp.append("university", s));
+  filters.admissionStatuses.forEach((s) => sp.append("status", s));
+  if (filters.minRating !== null) sp.set("rating", String(filters.minRating));
   if (filters.sortBy !== "relevance") sp.set("sort", filters.sortBy);
   if (page > 1) sp.set("page", String(page));
   return sp.toString();

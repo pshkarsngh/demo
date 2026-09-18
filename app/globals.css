@@ -133,6 +133,12 @@ h5 {
   border-radius: 6px;
 }
 
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible {
+  outline: none;
+}
+
 /* ---------- Brand helpers ---------- */
 .text-gradient {
   background: linear-gradient(92deg, #7c3aed 0%, #4f46e5 55%, #2563eb 100%);

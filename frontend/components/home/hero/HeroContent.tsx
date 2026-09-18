@@ -1,7 +1,7 @@
 "use client";
 
 import { motion, useReducedMotion } from "motion/react";
-import { Play, Flame } from "lucide-react";
+import { Play, Flame, Sparkles } from "lucide-react";
 import Link from "next/link";
 import { HeroSearch } from "@/components/home/hero/HeroSearch";
 import { HeroStats } from "@/components/home/hero/HeroStats";
@@ -30,12 +30,11 @@ export function HeroContent() {
         {...fade(0.18)}
         className="hero-headline mt-4 font-display font-extrabold text-white text-4xl sm:text-5xl lg:text-[3.6rem] tracking-[-0.035em] leading-[1.08] drop-shadow-[0_8px_28px_rgba(2,8,28,0.45)]"
       >
-        <span className="block">Find the College</span>
-        <span className="block">That Fits</span>
+        <span className="block">Find the Right College</span>
         <span className="block">
-          <span className="text-purple-400">Your</span>{" "}
+          For{" "}
           <span className="bg-gradient-to-r from-pink-500 via-rose-400 to-orange-400 bg-clip-text text-transparent">
-            Future.
+            Your Future.
           </span>
         </span>
       </motion.h1>
@@ -57,6 +56,15 @@ export function HeroContent() {
         className="mt-7 max-w-xl"
       >
         <HeroSearch />
+        {/* Popup predictor CTA */}
+        <div className="mt-3">
+          <Link
+            href="/college-predictor"
+            className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-orange-500 to-orange-600 px-5 py-2.5 text-sm font-bold text-white shadow-lg shadow-orange-500/30 transition hover:brightness-110"
+          >
+            <Sparkles className="h-4 w-4" /> AI College Predictor
+          </Link>
+        </div>
         {/* Popular searches chips below search bar */}
         <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
           <span className="flex items-center gap-1 font-semibold text-orange-400">

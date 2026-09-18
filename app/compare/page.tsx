@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import CompareExplorer from "@/components/compare/CompareExplorer";
+import { AdmissionHelpBanner } from "@/components/admission/AdmissionHelpBanner";
 
 export const metadata: Metadata = {
   title: "Compare Colleges",
@@ -8,5 +9,10 @@ export const metadata: Metadata = {
 };
 
 export default function Page() {
-  return <CompareExplorer />;
+  return (
+    <>
+      <CompareExplorer />
+      <AdmissionHelpBanner />
+    </>
+  );
 }
