@@ -13,6 +13,7 @@ import { COLLEGES } from "@/lib/data";
 import { ALL_DEGREES } from "@/lib/data";
 import type { Review } from "@/lib/types";
 import { useApp } from "@/lib/context/AppContext";
+import { AnimatedRatingMarquee } from "@/components/reviews/AnimatedRatingMarquee";
 
 const ROLE_ICON: Record<Review["role"], typeof Building2> = {
   Alumni: Building2,
@@ -41,14 +42,14 @@ export function ReviewCard({ review, showCollege = false }: { review: ExtendedRe
   const Icon = ROLE_ICON[review.role] ?? UserRound;
 
   return (
-    <div className="flex flex-col rounded-2xl border border-slate-100 bg-white p-5 transition hover:border-purple-200 hover:shadow-lg hover:shadow-purple-900/5">
+    <div className="flex flex-col rounded-2xl border border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 transition hover:border-purple-200 dark:hover:border-purple-600 hover:shadow-lg hover:shadow-purple-900/5">
       <div className="flex items-center gap-3">
-        <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-purple-100 text-sm font-bold text-purple-700">
+        <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-purple-100 dark:bg-purple-950/70 text-sm font-bold text-purple-700 dark:text-purple-300">
           {review.initials}
         </span>
         <div className="min-w-0">
           <div className="flex items-center gap-1.5">
-            <p className="truncate text-sm font-bold text-gray-900">{review.author}</p>
+            <p className="truncate text-sm font-bold text-gray-900 dark:text-white">{review.author}</p>
             {review.verified && (
               <span title="Verified review"><BadgeCheck className="h-4 w-4 text-green-500" /></span>
             )}
@@ -64,19 +65,19 @@ export function ReviewCard({ review, showCollege = false }: { review: ExtendedRe
         <span className="text-[11px] text-slate-400">{formatDate(review.date)}</span>
       </div>
 
-      <h3 className="mt-2 font-semibold text-gray-900">{review.title}</h3>
-      <p className="mt-1.5 flex-1 text-sm leading-relaxed text-slate-500">{review.body}</p>
+      <h3 className="mt-2 font-semibold text-gray-900 dark:text-slate-100">{review.title}</h3>
+      <p className="mt-1.5 flex-1 text-sm leading-relaxed text-slate-500 dark:text-slate-400">{review.body}</p>
 
       {showCollege && review.collegeSlug && (
         <Link
           href={`/colleges/${review.collegeSlug}`}
-          className="mt-3 inline-flex w-fit items-center gap-1.5 rounded-lg bg-slate-50 px-2.5 py-1.5 text-xs font-semibold text-purple-700 transition hover:bg-purple-50"
+          className="mt-3 inline-flex w-fit items-center gap-1.5 rounded-lg bg-slate-50 dark:bg-slate-800 px-2.5 py-1.5 text-xs font-semibold text-purple-700 dark:text-purple-300 transition hover:bg-purple-50 dark:hover:bg-purple-950/50"
         >
           <Building2 className="h-3.5 w-3.5" /> {review.collegeName}
         </Link>
       )}
 
-      <div className="mt-3 flex items-center justify-between border-t border-slate-100 pt-3">
+      <div className="mt-3 flex items-center justify-between border-t border-slate-100 dark:border-slate-800 pt-3">
         <button
           type="button"
           onClick={() => {
@@ -85,7 +86,7 @@ export function ReviewCard({ review, showCollege = false }: { review: ExtendedRe
           }}
           className={cn(
             "inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-semibold transition",
-            voted ? "border-purple-600 bg-purple-600 text-white" : "border-slate-200 text-slate-600 hover:border-purple-300",
+            voted ? "border-purple-600 bg-purple-600 text-white" : "border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:border-purple-300",
           )}
         >
           <ThumbsUp className="h-3.5 w-3.5" /> Helpful ({helpful})
@@ -98,30 +99,13 @@ export function ReviewCard({ review, showCollege = false }: { review: ExtendedRe
 export function ReviewForm({ collegeShortName, onDone }: { collegeShortName?: string; onDone?: () => void }) {
   const { addReview } = useApp();
   const [form, setForm] = useState({
-    college: collegeShortName ?? "",
-    course: "",
-    year: "",
-    rating: 4,
+    author: "",
+    role: "Student" as Review["role"],
+    program: "",
+    rating: 5,
     title: "",
     body: "",
-    name: "",
-    role: "Student",
   });
-  const [hovered, setHovered] = useState(0);
-
-  const submit = (e: React.FormEvent) => {
-    e.preventDefault();
-    const review: Review = {
-      id: `rv-${Date.now()}`,
-      author: form.name || "Anonymous Student",
-      initials: initialsOf(form.name || "Anonymous Student"),
-      role: (form.role as Review["role"]) ?? "Student",
-      program: `${form.course} ${form.year}`.trim(),
-      rating: form.rating,
-      title: form.title || "My experience",
-      body: form.body || "Overall a good experience. Facilities and faculty were helpful.",
-      date: new Date().toISOString().slice(0, 10),
-      helpful: 0,
       verified: false,
     };
     addReview(review);

@@ -109,6 +109,13 @@ html.dark .text-gray-700 {
   color: #d1d5db !important;
 }
 
+html.dark .hover\:text-purple-600:hover,
+html.dark .hover\:text-purple-700:hover,
+html.dark .dark\:hover\:text-purple-300:hover,
+html.dark .dark\:hover\:text-purple-400:hover {
+  color: #c084fc !important;
+}
+
 html.dark .border-gray-100,
 html.dark .border-gray-200,
 html.dark .border-purple-100,
@@ -576,5 +583,67 @@ html.dark .floating-pill-nav.scrolled {
 }
 
 .btn-uiverse-arrow:hover .arrow::before {
-  right: 0;
+  right: 0px;
+}
+
+/* Animated Marquee Keyframes & Star Shimmer */
+@keyframes marquee-left {
+  0% {
+    transform: translate3d(0%, 0, 0);
+  }
+  100% {
+    transform: translate3d(-50%, 0, 0);
+  }
+}
+
+@keyframes marquee-right {
+  0% {
+    transform: translate3d(-50%, 0, 0);
+  }
+  100% {
+    transform: translate3d(0%, 0, 0);
+  }
+}
+
+@keyframes star-pulse {
+  0%, 100% {
+    transform: scale(1) translateZ(0);
+    filter: drop-shadow(0 0 2px rgba(251, 191, 36, 0.4));
+  }
+  50% {
+    transform: scale(1.1) translateZ(0);
+    filter: drop-shadow(0 0 6px rgba(251, 191, 36, 0.85));
+  }
+}
+
+.animate-marquee-left {
+  display: flex;
+  width: max-content;
+  animation: marquee-left 65s linear infinite;
+  will-change: transform;
+  transform: translateZ(0);
+  backface-visibility: hidden;
+}
+
+.animate-marquee-right {
+  display: flex;
+  width: max-content;
+  animation: marquee-right 65s linear infinite;
+  will-change: transform;
+  transform: translateZ(0);
+  backface-visibility: hidden;
+}
+
+.animate-marquee-left:hover,
+.animate-marquee-right:hover {
+  animation-play-state: paused;
+}
+
+.star-shimmer {
+  transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1), filter 0.3s ease;
+  will-change: transform, filter;
+}
+
+.group:hover .star-shimmer {
+  animation: star-pulse 2s cubic-bezier(0.4, 0, 0.2, 1) infinite;
 }

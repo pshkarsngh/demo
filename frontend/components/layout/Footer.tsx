@@ -72,24 +72,24 @@ const FOOTER_COLS = [
 
 export function Footer() {
   return (
-    <footer className="mt-auto border-t border-purple-100 bg-white">
+    <footer className="mt-auto border-t border-purple-100 dark:border-slate-800/80 bg-white dark:bg-[#070b14]">
       <div className="mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:px-8 lg:py-16">
         <div className="grid grid-cols-1 gap-10 md:grid-cols-2 lg:grid-cols-6">
           {/* Brand & Social Column */}
           <div className="lg:col-span-2">
             <Logo showTagline={true} />
-            <p className="mt-4 max-w-sm text-sm leading-relaxed text-gray-500">
+            <p className="mt-4 max-w-sm text-sm leading-relaxed text-gray-500 dark:text-slate-400">
               Your trusted partner in finding the right college, course and career path.
             </p>
 
             {/* Social Icons */}
-            <div className="mt-6 flex items-center gap-3 text-gray-700">
+            <div className="mt-6 flex items-center gap-3 text-gray-700 dark:text-slate-300">
               <a
                 href="https://instagram.com"
                 target="_blank"
                 rel="noreferrer"
                 aria-label="Instagram"
-                className="grid h-8 w-8 place-items-center rounded-lg border border-gray-200 text-gray-700 transition hover:border-purple-300 hover:text-purple-600"
+                className="grid h-8 w-8 place-items-center rounded-lg border border-gray-200 dark:border-slate-800 text-gray-700 dark:text-slate-300 transition-all hover:border-purple-300 dark:hover:border-purple-500/60 hover:text-purple-600 dark:hover:text-purple-400 hover:bg-purple-50/50 dark:hover:bg-purple-950/40"
               >
                 <InstagramIcon className="h-4 w-4" />
               </a>
@@ -98,7 +98,7 @@ export function Footer() {
                 target="_blank"
                 rel="noreferrer"
                 aria-label="LinkedIn"
-                className="grid h-8 w-8 place-items-center rounded-lg border border-gray-200 text-gray-700 transition hover:border-purple-300 hover:text-purple-600"
+                className="grid h-8 w-8 place-items-center rounded-lg border border-gray-200 dark:border-slate-800 text-gray-700 dark:text-slate-300 transition-all hover:border-purple-300 dark:hover:border-purple-500/60 hover:text-purple-600 dark:hover:text-purple-400 hover:bg-purple-50/50 dark:hover:bg-purple-950/40"
               >
                 <LinkedinIcon className="h-4 w-4" />
               </a>
@@ -107,7 +107,7 @@ export function Footer() {
                 target="_blank"
                 rel="noreferrer"
                 aria-label="YouTube"
-                className="grid h-8 w-8 place-items-center rounded-lg border border-gray-200 text-gray-700 transition hover:border-purple-300 hover:text-purple-600"
+                className="grid h-8 w-8 place-items-center rounded-lg border border-gray-200 dark:border-slate-800 text-gray-700 dark:text-slate-300 transition-all hover:border-purple-300 dark:hover:border-purple-500/60 hover:text-purple-600 dark:hover:text-purple-400 hover:bg-purple-50/50 dark:hover:bg-purple-950/40"
               >
                 <YoutubeIcon className="h-4 w-4" />
               </a>
@@ -116,7 +116,7 @@ export function Footer() {
                 target="_blank"
                 rel="noreferrer"
                 aria-label="X (Twitter)"
-                className="grid h-8 w-8 place-items-center rounded-lg border border-gray-200 text-gray-700 transition hover:border-purple-300 hover:text-purple-600"
+                className="grid h-8 w-8 place-items-center rounded-lg border border-gray-200 dark:border-slate-800 text-gray-700 dark:text-slate-300 transition-all hover:border-purple-300 dark:hover:border-purple-500/60 hover:text-purple-600 dark:hover:text-purple-400 hover:bg-purple-50/50 dark:hover:bg-purple-950/40"
               >
                 <XIcon className="h-3.5 w-3.5" />
               </a>
@@ -126,13 +126,13 @@ export function Footer() {
           {/* 3 Nav Columns */}
           {FOOTER_COLS.map((col) => (
             <div key={col.title}>
-              <h3 className="text-sm font-bold text-gray-900">{col.title}</h3>
+              <h3 className="text-sm font-bold text-gray-900 dark:text-slate-100">{col.title}</h3>
               <ul className="mt-4 space-y-2.5">
                 {col.links.map((link) => (
                   <li key={link.label}>
                     <Link
                       href={link.href}
-                      className="text-sm text-gray-500 transition-colors hover:text-purple-700"
+                      className="inline-block text-sm text-gray-500 dark:text-slate-400 transition-all duration-200 hover:translate-x-1 hover:text-purple-600 dark:hover:text-purple-400"
                     >
                       {link.label}
                     </Link>
@@ -145,7 +145,7 @@ export function Footer() {
           {/* Right handwritten doodle */}
           <div className="flex flex-col items-center justify-center lg:items-end">
             <div className="text-right select-none">
-              <p className="font-hand text-3xl font-bold leading-tight text-purple-900">
+              <p className="font-hand text-3xl font-bold leading-tight text-purple-900 dark:text-purple-300">
                 Better
                 <br />
                 Colleges
@@ -167,8 +167,8 @@ export function Footer() {
         </div>
 
         {/* Bottom copyright line */}
-        <div className="mt-12 border-t border-gray-100 pt-6 text-center sm:text-right">
-          <p className="text-xs text-gray-400">
+        <div className="mt-12 border-t border-gray-100 dark:border-slate-800/80 pt-6 text-center sm:text-right">
+          <p className="text-xs text-gray-400 dark:text-slate-500">
             © 2026 padhaanewala. All rights reserved.
           </p>
         </div>
