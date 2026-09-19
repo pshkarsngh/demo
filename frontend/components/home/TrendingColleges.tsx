@@ -77,16 +77,16 @@ export function TrendingColleges() {
                       <span className="text-xs text-gray-400">{formatCount(c.reviewCount)} reviews</span>
                     </div>
 
-                    <div className="mt-3 flex items-center justify-between rounded-xl bg-purple-50/60 px-3 py-2 text-xs">
-                      <span className="inline-flex items-center gap-1 text-gray-500">
-                        <IndianRupee className="h-3.5 w-3.5 text-purple-600" />
-                        <span className="font-semibold text-gray-900">
+                    <div className="mt-3 flex items-center justify-between rounded-xl bg-purple-50/60 dark:bg-slate-800/80 px-3 py-2 text-xs">
+                      <span className="inline-flex items-center gap-1 text-gray-500 dark:text-slate-400">
+                        <IndianRupee className="h-3.5 w-3.5 text-purple-600 dark:text-purple-400" />
+                        <span className="font-semibold text-gray-900 dark:text-slate-100">
                           {formatINR(Math.min(...c.courses.map((x) => x.feePerYear)))}/yr
                         </span>
                       </span>
-                      <span className="inline-flex items-center gap-1 text-gray-500">
-                        <TrendingUp className="h-3.5 w-3.5 text-emerald-500" />
-                        <span className="font-semibold text-gray-900">{c.placement.placementRate}%</span>
+                      <span className="inline-flex items-center gap-1 text-gray-500 dark:text-slate-400">
+                        <TrendingUp className="h-3.5 w-3.5 text-emerald-500 dark:text-emerald-400" />
+                        <span className="font-semibold text-gray-900 dark:text-slate-100">{c.placement.placementRate}%</span>
                       </span>
                     </div>
 

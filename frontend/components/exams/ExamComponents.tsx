@@ -32,41 +32,41 @@ export function ExamCard({ exam }: { exam: Exam }) {
   return (
     <Link
       href={`/exams/${exam.slug}`}
-      className="group flex flex-col rounded-2xl border border-slate-100 bg-white p-5 transition hover:-translate-y-0.5 hover:border-purple-200 hover:shadow-lg hover:shadow-purple-900/5"
+      className="group flex flex-col rounded-2xl border border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 transition hover:-translate-y-0.5 hover:border-purple-200 dark:hover:border-purple-700 hover:shadow-lg hover:shadow-purple-900/5 dark:hover:shadow-purple-950/30"
     >
       <div className="flex items-start justify-between gap-3">
         <div>
-          <h3 className="font-display text-lg font-bold text-gray-900 group-hover:text-purple-700">
+          <h3 className="font-display text-lg font-bold text-gray-900 dark:text-slate-100 group-hover:text-purple-700 dark:group-hover:text-purple-300">
             {exam.shortName}
           </h3>
-          <p className="mt-0.5 text-xs text-slate-400">{exam.conductingBody}</p>
+          <p className="mt-0.5 text-xs text-slate-400 dark:text-slate-400">{exam.conductingBody}</p>
         </div>
         <Badge variant={STAGE_TONE[exam.stage] ?? "gray"}>{exam.stage}</Badge>
       </div>
 
-      <p className="mt-3 line-clamp-2 text-sm text-slate-500">{exam.overview}</p>
+      <p className="mt-3 line-clamp-2 text-sm text-slate-500 dark:text-slate-300">{exam.overview}</p>
 
-      <div className="mt-4 grid grid-cols-2 gap-2 text-xs text-slate-500">
+      <div className="mt-4 grid grid-cols-2 gap-2 text-xs text-slate-500 dark:text-slate-300">
         <span className="flex items-center gap-1.5">
-          <CalendarDays className="h-3.5 w-3.5 text-purple-500" />
+          <CalendarDays className="h-3.5 w-3.5 text-purple-500 dark:text-purple-400" />
           {nextDate ? `Next: ${nextDate.label}` : "Dates announced"}
         </span>
         <span className="flex items-center gap-1.5">
-          <Clock className="h-3.5 w-3.5 text-purple-500" />
+          <Clock className="h-3.5 w-3.5 text-purple-500 dark:text-purple-400" />
           {exam.duration}
         </span>
         <span className="flex items-center gap-1.5">
-          <FileText className="h-3.5 w-3.5 text-purple-500" />
+          <FileText className="h-3.5 w-3.5 text-purple-500 dark:text-purple-400" />
           {exam.type}
         </span>
         <span className="flex items-center gap-1.5">
-          <Users className="h-3.5 w-3.5 text-purple-500" />
+          <Users className="h-3.5 w-3.5 text-purple-500 dark:text-purple-400" />
           {exam.coursesAccepted[0]}
         </span>
       </div>
 
-      <div className="mt-4 flex items-center justify-between border-t border-slate-100 pt-3">
-        <span className="inline-flex items-center gap-1 text-sm font-semibold text-purple-700">
+      <div className="mt-4 flex items-center justify-between border-t border-slate-100 dark:border-slate-800 pt-3">
+        <span className="inline-flex items-center gap-1 text-sm font-semibold text-purple-700 dark:text-purple-300">
           View exam details <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
         </span>
       </div>
@@ -103,7 +103,7 @@ export function ExamsExplorer({ list }: { list?: Exam[] }) {
                 "rounded-full border px-3 py-1.5 text-xs font-medium transition",
                 stage === s
                   ? "border-purple-600 bg-purple-600 text-white"
-                  : "border-slate-200 bg-white text-slate-600 hover:border-purple-300",
+                  : "border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-300 hover:border-purple-300 dark:hover:border-purple-700",
               )}
             >
               {s}
@@ -119,8 +119,8 @@ export function ExamsExplorer({ list }: { list?: Exam[] }) {
       </div>
 
       {!filtered.length && (
-        <div className="rounded-3xl border border-dashed border-slate-200 py-16 text-center">
-          <p className="text-sm text-slate-500">No exams match your search.</p>
+        <div className="rounded-3xl border border-dashed border-slate-200 dark:border-slate-800 py-16 text-center">
+          <p className="text-sm text-slate-500 dark:text-slate-400">No exams match your search.</p>
         </div>
       )}
     </div>
@@ -130,27 +130,27 @@ export function ExamsExplorer({ list }: { list?: Exam[] }) {
 export function ExamImportantDates({ exam }: { exam: Exam }) {
   const today = new Date();
   return (
-    <div className="overflow-hidden rounded-2xl border border-slate-100 bg-white">
-      <div className="border-b border-slate-100 bg-slate-50 px-5 py-3">
-        <h3 className="flex items-center gap-2 font-bold text-gray-900">
-          <CalendarDays className="h-4 w-4 text-purple-600" /> Important dates
+    <div className="overflow-hidden rounded-2xl border border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900">
+      <div className="border-b border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/60 px-5 py-3">
+        <h3 className="flex items-center gap-2 font-bold text-gray-900 dark:text-slate-100">
+          <CalendarDays className="h-4 w-4 text-purple-600 dark:text-purple-400" /> Important dates
         </h3>
       </div>
-      <div className="divide-y divide-slate-100">
+      <div className="divide-y divide-slate-100 dark:divide-slate-800">
         {exam.dates.map((d) => {
           const past = new Date(d.date) < today;
           return (
             <div key={d.label} className="flex items-center justify-between px-5 py-3">
               <div className="flex items-center gap-2">
                 {past ? (
-                  <CheckCircle2 className="h-4 w-4 text-green-500" />
+                  <CheckCircle2 className="h-4 w-4 text-green-500 dark:text-green-400" />
                 ) : (
-                  <AlertCircle className="h-4 w-4 text-amber-500" />
+                  <AlertCircle className="h-4 w-4 text-amber-500 dark:text-amber-400" />
                 )}
-                <span className="text-sm text-slate-600">{d.label}</span>
-                {d.tentative && <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-slate-500">TENTATIVE</span>}
+                <span className="text-sm text-slate-600 dark:text-slate-300">{d.label}</span>
+                {d.tentative && <span className="rounded bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 text-[10px] font-semibold text-slate-500 dark:text-slate-400">TENTATIVE</span>}
               </div>
-              <span className="text-sm font-semibold text-gray-900">{formatDate(d.date)}</span>
+              <span className="text-sm font-semibold text-gray-900 dark:text-slate-100">{formatDate(d.date)}</span>
             </div>
           );
         })}
@@ -164,16 +164,16 @@ export function ExamFaqs({ exam }: { exam: Exam }) {
   return (
     <div className="space-y-2">
       {exam.faqs.map((f, i) => (
-        <div key={i} className="overflow-hidden rounded-2xl border border-slate-100 bg-white">
+        <div key={i} className="overflow-hidden rounded-2xl border border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900">
           <button
             type="button"
             onClick={() => setOpen(open === i ? null : i)}
             className="flex w-full items-center justify-between gap-3 px-5 py-4 text-left"
           >
-            <span className="text-sm font-semibold text-gray-900">{f.q}</span>
-            <Chevron className={cn("h-4 w-4 shrink-0 text-slate-400 transition-transform", open === i && "rotate-180")} />
+            <span className="text-sm font-semibold text-gray-900 dark:text-slate-100">{f.q}</span>
+            <Chevron className={cn("h-4 w-4 shrink-0 text-slate-400 dark:text-slate-500 transition-transform", open === i && "rotate-180")} />
           </button>
-          {open === i && <p className="px-5 pb-4 text-sm leading-relaxed text-slate-500">{f.a}</p>}
+          {open === i && <p className="px-5 pb-4 text-sm leading-relaxed text-slate-500 dark:text-slate-300">{f.a}</p>}
         </div>
       ))}
     </div>
@@ -200,11 +200,11 @@ export function ExamQuickFacts({ exam }: { exam: Exam }) {
   return (
     <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
       {facts.map((f) => (
-        <div key={f.label} className="rounded-2xl border border-slate-100 bg-white p-4">
-          <span className="flex items-center gap-1.5 text-xs text-slate-400">
+        <div key={f.label} className="rounded-2xl border border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 p-4">
+          <span className="flex items-center gap-1.5 text-xs text-slate-400 dark:text-slate-400">
             {f.icon} {f.label}
           </span>
-          <p className="mt-1.5 text-sm font-semibold text-gray-900">{f.value}</p>
+          <p className="mt-1.5 text-sm font-semibold text-gray-900 dark:text-slate-100">{f.value}</p>
         </div>
       ))}
     </div>
@@ -218,7 +218,7 @@ export function ExamOfficialLink({ exam, className }: { exam: Exam; className?: 
       target="_blank"
       rel="noreferrer"
       className={cn(
-        "inline-flex items-center gap-2 rounded-full bg-slate-900 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-700",
+        "inline-flex items-center gap-2 rounded-full bg-slate-900 dark:bg-purple-600 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-700 dark:hover:bg-purple-500",
         className,
       )}
     >

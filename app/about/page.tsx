@@ -48,23 +48,23 @@ export default function AboutPage() {
   return (
     <section className="mx-auto max-w-7xl px-4 py-10 sm:px-6 lg:px-8 lg:py-16">
       {/* hero */}
-      <div className="relative isolate overflow-hidden rounded-3xl bg-gradient-to-br from-purple-100/80 via-white to-blue-50/70 px-6 py-14 text-center sm:px-12 lg:py-20">
+      <div className="relative isolate overflow-hidden rounded-3xl bg-gradient-to-br from-purple-100/80 via-white to-blue-50/70 dark:from-purple-950/60 dark:via-slate-900 dark:to-blue-950/60 dark:border dark:border-purple-800/40 px-6 py-14 text-center sm:px-12 lg:py-20 shadow-sm">
         <div className="pointer-events-none absolute inset-0 -z-10">
-          <div className="absolute -left-12 -top-16 h-60 w-60 rounded-full bg-purple-400/20 blur-3xl animate-float-slow" />
-          <div className="absolute -right-10 top-10 h-64 w-64 rounded-full bg-orange-300/15 blur-3xl animate-float-slower" />
+          <div className="absolute -left-12 -top-16 h-60 w-60 rounded-full bg-purple-400/20 dark:bg-purple-600/10 blur-3xl animate-float-slow" />
+          <div className="absolute -right-10 top-10 h-64 w-64 rounded-full bg-orange-300/15 dark:bg-orange-500/10 blur-3xl animate-float-slower" />
         </div>
-        <span className="inline-flex items-center gap-2 rounded-full bg-purple-100 px-4 py-1.5 text-xs font-bold text-purple-700">
+        <span className="inline-flex items-center gap-2 rounded-full bg-purple-100 dark:bg-purple-900/50 px-4 py-1.5 text-xs font-bold text-purple-700 dark:text-purple-300">
           <BadgeCheck className="h-3.5 w-3.5" /> Since 2024
         </span>
-        <h1 className="font-display mx-auto mt-5 max-w-2xl text-3xl font-extrabold leading-tight tracking-tight text-purple-950 sm:text-4xl lg:text-[2.6rem]">
+        <h1 className="font-display mx-auto mt-5 max-w-2xl text-3xl font-extrabold leading-tight tracking-tight text-purple-950 dark:text-white sm:text-4xl lg:text-[2.6rem]">
           Helping Indian students make smarter college decisions
         </h1>
-        <p className="mx-auto mt-4 max-w-xl text-sm leading-relaxed text-gray-600 sm:text-base">
+        <p className="mx-auto mt-4 max-w-xl text-sm leading-relaxed text-gray-600 dark:text-gray-300 sm:text-base">
           We started CampusPulse because finding the right college in India is
           harder than it needs to be. Outdated directories, confusing fees and
           unreliable rankings make a simple decision feel impossible.
         </p>
-        <p className="mx-auto mt-3 max-w-xl text-sm leading-relaxed text-gray-500 sm:text-base">
+        <p className="mx-auto mt-3 max-w-xl text-sm leading-relaxed text-gray-500 dark:text-gray-400 sm:text-base">
           We believe that by bringing real data together in one fast, usable
           place, we can save thousands of students from stress, bad decisions
           and wasted money.
@@ -77,8 +77,8 @@ export default function AboutPage() {
             Explore colleges
           </Link>
           <Link
-            href="/about"
-            className="inline-flex h-11 items-center gap-2 rounded-xl bg-white px-6 text-sm font-semibold text-blue-700 ring-1 ring-blue-200 transition hover:bg-blue-50"
+            href="/contact"
+            className="inline-flex h-11 items-center gap-2 rounded-xl bg-white dark:bg-slate-800 px-6 text-sm font-semibold text-blue-700 dark:text-blue-300 ring-1 ring-blue-200 dark:ring-slate-700 transition hover:bg-blue-50 dark:hover:bg-slate-700"
           >
             Contact us
           </Link>

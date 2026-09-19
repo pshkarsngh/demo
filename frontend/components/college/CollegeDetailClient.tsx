@@ -95,8 +95,8 @@ export function StickyMobileActions({ collegeId, shortName }: { collegeId: strin
           className={cn(
             "flex h-11 flex-1 items-center justify-center gap-2 rounded-xl text-sm font-bold transition",
             comparing
-              ? "bg-blue-50 text-blue-700 ring-1 ring-blue-200"
-              : "bg-purple-50 text-purple-700 ring-1 ring-purple-200 hover:bg-purple-100",
+              ? "bg-blue-50 dark:bg-slate-800 text-blue-700 dark:text-blue-300 ring-1 ring-blue-200 dark:ring-slate-700"
+              : "bg-purple-50 dark:bg-slate-800 text-purple-700 dark:text-purple-300 ring-1 ring-purple-200 dark:ring-slate-700 hover:bg-purple-100 dark:hover:bg-slate-700",
           )}
         >
           <Scale className="h-4 w-4" />

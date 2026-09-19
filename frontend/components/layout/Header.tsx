@@ -49,17 +49,17 @@ const MORE_NAV = [
   { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
 ];
 
-export function Logo({ dark = false, showTagline = true }: { dark?: boolean; showTagline?: boolean }) {
+export function Logo({ dark = false, showTagline = false }: { dark?: boolean; showTagline?: boolean }) {
   return (
     <Link href="/" className="flex items-center gap-2.5" aria-label="padhaanewala home">
-      <span className="relative grid h-10 w-10 place-items-center rounded-xl bg-purple-600 text-white shadow-md shadow-purple-600/30">
-        <GraduationCap className="h-6 w-6" />
+      <span className="relative grid h-9 w-9 place-items-center rounded-full bg-gradient-to-tr from-purple-600 to-indigo-500 text-white shadow-md shadow-purple-600/30">
+        <GraduationCap className="h-5 w-5" />
       </span>
       <span className="leading-none">
         <span
           className={cn(
-            "block font-display text-xl font-extrabold tracking-[-0.03em]",
-            dark ? "text-white" : "text-purple-950",
+            "block font-display text-lg font-extrabold tracking-[-0.03em]",
+            dark ? "text-white" : "text-purple-950 dark:text-white"
           )}
         >
           padhaanewala
@@ -67,8 +67,8 @@ export function Logo({ dark = false, showTagline = true }: { dark?: boolean; sho
         {showTagline && (
           <span
             className={cn(
-              "mt-0.5 block text-[7.5px] font-bold uppercase tracking-[0.18em]",
-              dark ? "text-white/60" : "text-gray-400",
+              "mt-0.5 block text-[7px] font-bold uppercase tracking-[0.18em]",
+              dark ? "text-white/60" : "text-gray-400 dark:text-gray-400"
             )}
           >
             LEARN TODAY, A BRIGHTER TOMORROW
@@ -86,10 +86,22 @@ export function Header() {
   const pathname = usePathname();
   const moreRef = useRef<HTMLDivElement | null>(null);
 
-  const heroMode = pathname === "/" && !scrolled && !open;
-
   useEffect(() => {
-    const onScroll = () => setScrolled(window.scrollY > 10);
+    let ticking = false;
+    const onScroll = () => {
+      if (!ticking) {
+        window.requestAnimationFrame(() => {
+          const y = window.scrollY;
+          setScrolled((prev) => {
+            if (y > 45 && !prev) return true;
+            if (y < 20 && prev) return false;
+            return prev;
+          });
+          ticking = false;
+        });
+        ticking = true;
+      }
+    };
     onScroll();
     window.addEventListener("scroll", onScroll, { passive: true });
     return () => window.removeEventListener("scroll", onScroll);
@@ -114,16 +126,20 @@ export function Header() {
   const isMoreActive = MORE_NAV.some((i) => isActive(i.href));
 
   return (
-    <header
-      className={cn(
-        "sticky top-0 z-50 transition-all duration-300",
-        heroMode || open ? "nav-dark" : scrolled || open ? "glass-nav" : "bg-transparent",
-      )}
-    >
-      <div className="mx-auto flex h-16 max-w-7xl items-center justify-between gap-4 px-4 sm:px-6 lg:h-[72px] lg:px-8">
-        <Logo dark={heroMode} showTagline={true} />
+    <header className="fixed top-0 left-0 right-0 z-50 pointer-events-none px-3 sm:px-6">
+      <div
+        className={cn(
+          "pointer-events-auto mx-auto flex items-center justify-between gap-3 backdrop-blur-xl floating-pill-nav",
+          scrolled
+            ? "scrolled bg-white/92 dark:bg-slate-900/92 py-2 px-4 sm:px-6"
+            : "bg-white/80 dark:bg-slate-900/80 py-3 px-5 sm:px-7"
+        )}
+      >
+        {/* Left: Logo + Name */}
+        <Logo showTagline={false} />
 
-        <nav aria-label="Primary" className="hidden items-center gap-0.5 lg:flex">
+        {/* Center: Nav links with dropdown carets */}
+        <nav aria-label="Primary" className="hidden items-center gap-1 min-[900px]:flex">
           {PRIMARY_NAV.map((item) => {
             const active = isActive(item.href);
             return (
@@ -131,14 +147,10 @@ export function Header() {
                 key={item.href}
                 href={item.href}
                 className={cn(
-                  "relative rounded-lg px-3 py-2 text-[14px] font-medium transition-colors",
-                  heroMode
-                    ? active
-                      ? "text-white font-semibold"
-                      : "text-white/80 hover:text-white"
-                    : active
-                      ? "text-purple-700 font-semibold"
-                      : "text-slate-600 hover:text-purple-700",
+                  "relative rounded-full px-3.5 py-1.5 text-[14px] font-medium transition-all duration-200",
+                  active
+                    ? "bg-purple-100/70 text-purple-900 font-bold dark:bg-purple-950/80 dark:text-purple-200"
+                    : "text-slate-600 dark:text-slate-300 hover:text-purple-700 dark:hover:text-purple-300 hover:bg-purple-50/50 dark:hover:bg-slate-800/50"
                 )}
               >
                 {item.label}
@@ -152,21 +164,18 @@ export function Header() {
               aria-expanded={moreOpen}
               onClick={() => setMoreOpen((o) => !o)}
               className={cn(
-                "flex items-center gap-1 rounded-lg px-3 py-2 text-[14px] font-medium transition-colors",
-                heroMode
-                  ? isMoreActive
-                    ? "text-white font-semibold"
-                    : "text-white/80 hover:text-white"
-                  : isMoreActive
-                    ? "text-purple-700 font-semibold"
-                    : "text-slate-600 hover:text-purple-700",
+                "flex items-center gap-1 rounded-full px-3.5 py-1.5 text-[14px] font-medium transition-all duration-200",
+                isMoreActive
+                  ? "bg-purple-100/70 text-purple-900 font-bold dark:bg-purple-950/80 dark:text-purple-200"
+                  : "text-slate-600 dark:text-slate-300 hover:text-purple-700 dark:hover:text-purple-300 hover:bg-purple-50/50 dark:hover:bg-slate-800/50"
               )}
             >
               More
-              <ChevronDown className={cn("h-4 w-4 transition-transform", moreOpen && "rotate-180")} />
+              <ChevronDown className={cn("h-4 w-4 transition-transform duration-200", moreOpen && "rotate-180")} />
             </button>
+
             {moreOpen && (
-              <div className="absolute right-0 top-full mt-2 w-56 overflow-hidden rounded-2xl border border-purple-100 bg-white p-1.5 shadow-xl animate-fade-up">
+              <div className="absolute right-0 top-full mt-3 w-56 overflow-hidden rounded-2xl border border-purple-100 dark:border-slate-800 bg-white dark:bg-slate-900 p-1.5 shadow-2xl animate-fade-up">
                 {MORE_NAV.map((item) => {
                   const Icon = item.icon;
                   const active = isActive(item.href);
@@ -177,7 +186,9 @@ export function Header() {
                       onClick={() => setMoreOpen(false)}
                       className={cn(
                         "flex items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm font-medium transition-colors",
-                        active ? "bg-purple-50 text-purple-800" : "text-gray-700 hover:bg-gray-50",
+                        active
+                          ? "bg-purple-50 dark:bg-purple-950/60 text-purple-800 dark:text-purple-300"
+                          : "text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-slate-800"
                       )}
                     >
                       <Icon className="h-4 w-4 text-purple-500" />
@@ -190,71 +201,39 @@ export function Header() {
           </div>
         </nav>
 
-        <div className="hidden items-center gap-2.5 lg:flex">
+        {/* Right: Circular Theme Toggle & Get Started Button */}
+        <div className="hidden items-center gap-3 min-[900px]:flex">
           <ThemeToggle />
           <Link
-            href="/colleges"
-            aria-label="Search colleges"
-            title="Search"
-            className={cn(
-              "grid h-9 w-9 place-items-center rounded-full transition-colors",
-              heroMode
-                ? "text-white/80 hover:bg-white/10 hover:text-white"
-                : "text-slate-500 hover:bg-purple-50 hover:text-purple-800",
-            )}
+            href="/login?mode=signup"
+            className="btn-uiverse-arrow text-xs font-bold py-2 px-4.5"
           >
-            <Search className="h-[18px] w-[18px]" />
+            <span>Get Started</span>
+            <div className="arrow-wrapper">
+              <div className="arrow" />
+            </div>
           </Link>
-          <ButtonLink href="/admission" variant="accent" size="sm" className="rounded-full">
-            <HelpCircle className="h-4 w-4" />
-            Get Admission Help
-          </ButtonLink>
-          {heroMode ? (
-            <>
-              <Link
-                href="/login"
-                className="inline-flex h-9 items-center gap-1.5 rounded-full border border-white/25 bg-white/[0.08] px-4 text-sm font-medium text-white backdrop-blur transition hover:bg-white/[0.18]"
-              >
-                Log in
-              </Link>
-              <Link
-                href="/login?mode=signup"
-                className="inline-flex h-9 items-center gap-1.5 rounded-full bg-gradient-to-r from-orange-500 to-orange-600 px-4 text-sm font-bold text-white shadow-md shadow-orange-500/30 transition hover:brightness-110"
-              >
-                Register <ArrowRight className="h-4 w-4" />
-              </Link>
-            </>
-          ) : (
-            <>
-              <ButtonLink href="/login" variant="secondary" size="sm" className="rounded-full">
-                Log in
-              </ButtonLink>
-              <ButtonLink href="/login?mode=signup" variant="outline" size="sm" className="rounded-full">
-                Register
-              </ButtonLink>
-            </>
-          )}
         </div>
 
-        <button
-          aria-label="Toggle menu"
-          aria-expanded={open}
-          className={cn(
-            "grid h-10 w-10 place-items-center rounded-xl shadow-sm ring-1 lg:hidden",
-            heroMode
-              ? "bg-white/[0.08] text-white ring-white/20 backdrop-blur"
-              : "bg-white text-purple-900 ring-purple-100",
-          )}
-          onClick={() => setOpen((o) => !o)}
-        >
-          {open ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
-        </button>
+        {/* Mobile menu button (< 900px) */}
+        <div className="flex items-center gap-2 min-[900px]:hidden">
+          <ThemeToggle />
+          <button
+            aria-label="Toggle menu"
+            aria-expanded={open}
+            className="grid h-9 w-9 place-items-center rounded-full bg-purple-100/60 text-purple-900 dark:bg-slate-800 dark:text-purple-300 transition-colors"
+            onClick={() => setOpen((o) => !o)}
+          >
+            {open ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+          </button>
+        </div>
       </div>
 
+      {/* Mobile Drawer Navigation */}
       {open && (
-        <div className="lg:hidden">
-          <div className="mx-4 mb-4 max-h-[calc(100vh-5rem)] overflow-y-auto rounded-2xl border border-purple-100 bg-white shadow-xl animate-fade-up scroll-thin">
-            <nav aria-label="Mobile" className="flex flex-col p-2">
+        <div className="pointer-events-auto min-[900px]:hidden mt-3 mx-auto w-[94%] max-w-[500px]">
+          <div className="max-h-[calc(100vh-6rem)] overflow-y-auto rounded-3xl border border-purple-100 dark:border-slate-800 bg-white/95 dark:bg-slate-900/95 p-3 shadow-2xl backdrop-blur-2xl animate-fade-up scroll-thin">
+            <nav aria-label="Mobile" className="flex flex-col gap-1">
               {[...PRIMARY_NAV, ...MORE_NAV, { label: "Home", href: "/", icon: Compass }].map((item) => {
                 const Icon = item.icon;
                 const active = isActive(item.href);
@@ -264,35 +243,40 @@ export function Header() {
                     href={item.href}
                     onClick={() => setOpen(false)}
                     className={cn(
-                      "flex items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium transition-colors",
-                      active ? "bg-purple-50 text-purple-800" : "text-gray-700 hover:bg-gray-50",
+                      "flex items-center gap-3 rounded-2xl px-4 py-2.5 text-sm font-semibold transition-colors",
+                      active
+                        ? "bg-purple-100/70 text-purple-900 dark:bg-purple-950/80 dark:text-purple-200"
+                        : "text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-slate-800"
                     )}
                   >
-                    <Icon className="h-[18px] w-[18px] text-purple-500" />
+                    <Icon className="h-4 w-4 text-purple-500" />
                     {item.label}
                   </Link>
                 );
               })}
-              <div className="mt-2 grid grid-cols-1 gap-2 border-t border-gray-100 pt-3">
-                <div className="flex items-center justify-between px-2 py-1">
-                  <span className="text-xs font-bold uppercase tracking-wider text-gray-500">Theme</span>
-                  <ThemeToggle showLabel />
-                </div>
-                <ButtonLink href="/admission" variant="accent" size="md" onClick={() => setOpen(false)}>
+              <div className="mt-2 grid grid-cols-1 gap-2 border-t border-gray-100 dark:border-slate-800 pt-3">
+                <ButtonLink href="/admission" variant="accent" size="md" className="rounded-full" onClick={() => setOpen(false)}>
                   <HelpCircle className="h-4 w-4" />
                   Get Admission Help
                 </ButtonLink>
-                <ButtonLink href="/colleges" variant="outline" size="md" onClick={() => setOpen(false)}>
-                  <Search className="h-4 w-4" />
-                  Search colleges
-                </ButtonLink>
                 <div className="flex gap-2">
-                  <ButtonLink href="/login" variant="secondary" size="md" className="flex-1" onClick={() => setOpen(false)}>
-                    Log in
-                  </ButtonLink>
-                  <ButtonLink href="/login?mode=signup" variant="outline" size="md" className="flex-1" onClick={() => setOpen(false)}>
-                    Register
-                  </ButtonLink>
+                  <Link
+                    href="/login"
+                    onClick={() => setOpen(false)}
+                    className="flex-1 inline-flex h-11 items-center justify-center rounded-2xl bg-purple-100/60 dark:bg-slate-800 text-sm font-bold text-purple-900 dark:text-purple-300"
+                  >
+                    Sign in
+                  </Link>
+                  <Link
+                    href="/login?mode=signup"
+                    onClick={() => setOpen(false)}
+                    className="btn-uiverse-arrow flex-1 justify-center py-2.5 text-sm font-bold"
+                  >
+                    <span>Create account</span>
+                    <div className="arrow-wrapper">
+                      <div className="arrow" />
+                    </div>
+                  </Link>
                 </div>
               </div>
             </nav>

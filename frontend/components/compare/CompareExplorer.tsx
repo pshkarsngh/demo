@@ -18,10 +18,10 @@ export default function CompareExplorer() {
     <section className="mx-auto max-w-7xl px-4 py-10 sm:px-6 lg:px-8 lg:py-16">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h1 className="font-display text-3xl font-extrabold tracking-tight text-purple-950 sm:text-4xl">
+          <h1 className="font-display text-3xl font-extrabold tracking-tight text-purple-950 dark:text-white sm:text-4xl">
             Compare Colleges
           </h1>
-          <p className="mt-2 max-w-xl text-sm text-gray-600 sm:text-base">
+          <p className="mt-2 max-w-xl text-sm text-gray-600 dark:text-gray-300 sm:text-base">
             Add up to 4 colleges and compare them side by side on every important metric.
           </p>
         </div>

@@ -142,12 +142,10 @@ export default function LoginPage() {
             {errors.password && <p className="mt-1 text-xs text-red-500">{errors.password}</p>}
           </div>
 
-          <Button
-            variant="accent"
-            size="lg"
+          <button
             type="submit"
             disabled={loading}
-            className="w-full"
+            className="btn-uiverse-arrow w-full justify-center py-3 text-base font-bold disabled:opacity-50"
           >
             {loading ? (
               <span className="flex items-center gap-2">
@@ -156,11 +154,13 @@ export default function LoginPage() {
               </span>
             ) : (
               <>
-                {mode === "login" ? "Sign in" : "Create account"}
-                <ArrowRight className="h-4 w-4" />
+                <span>{mode === "login" ? "Sign in" : "Create account"}</span>
+                <div className="arrow-wrapper">
+                  <div className="arrow" />
+                </div>
               </>
             )}
-          </Button>
+          </button>
         </form>
 
         <p className="mt-5 text-center text-sm text-gray-500">

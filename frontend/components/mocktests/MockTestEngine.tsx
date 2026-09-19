@@ -51,19 +51,19 @@ export function MockTestEngine() {
 
   return (
     <div className="mx-auto max-w-6xl">
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-purple-100 bg-gradient-to-r from-purple-50 to-indigo-50 p-5">
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-purple-100 dark:border-purple-900/40 bg-gradient-to-r from-purple-50 to-indigo-50 dark:from-slate-900 dark:via-purple-950/50 dark:to-slate-900 p-5 shadow-xs">
         <div>
-          <h2 className="font-display text-xl font-extrabold text-gray-900">Practice mock tests</h2>
-          <p className="text-sm text-slate-500">Attempt full-length and section-wise mocks with instant solutions and analytics.</p>
+          <h2 className="font-display text-xl font-extrabold text-gray-900 dark:text-white">Practice mock tests</h2>
+          <p className="text-sm text-slate-500 dark:text-gray-300">Attempt full-length and section-wise mocks with instant solutions and analytics.</p>
         </div>
-        <Link href="/exams" className="inline-flex items-center gap-1.5 text-sm font-semibold text-purple-700 hover:text-purple-800">
+        <Link href="/exams" className="inline-flex items-center gap-1.5 text-sm font-semibold text-purple-700 dark:text-purple-300 hover:text-purple-800 dark:hover:text-purple-200">
           View exam calendar <ArrowRight className="h-4 w-4" />
         </Link>
       </div>
 
       {testHistory.length > 0 && (
-        <div className="mt-5 rounded-2xl border border-green-100 bg-green-50/60 p-4">
-          <p className="flex items-center gap-2 text-sm font-semibold text-green-800">
+        <div className="mt-5 rounded-2xl border border-green-100 dark:border-emerald-800/50 bg-green-50/60 dark:bg-emerald-950/40 p-4">
+          <p className="flex items-center gap-2 text-sm font-semibold text-green-800 dark:text-emerald-300">
             <Trophy className="h-4 w-4" /> Last result: {testHistory[0].score}/{testHistory[0].maxScore} · {testHistory[0].percentile} percentile
           </p>
         </div>

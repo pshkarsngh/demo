@@ -25,10 +25,10 @@ export default function CoursesExplorer() {
   return (
     <section className="mx-auto max-w-7xl px-4 py-10 sm:px-6 lg:px-8 lg:py-16">
       <div className="max-w-2xl">
-        <h1 className="font-display text-3xl font-extrabold tracking-tight text-purple-950 sm:text-4xl">
+        <h1 className="font-display text-3xl font-extrabold tracking-tight text-purple-950 dark:text-white sm:text-4xl">
           Explore Courses
         </h1>
-        <p className="mt-2 text-sm text-gray-600 sm:text-base">
+        <p className="mt-2 text-sm text-gray-600 dark:text-gray-300 sm:text-base">
           {"Discover degrees, programs and specializations offered across India's top colleges."}
         </p>
         <div className="mt-6 flex items-center gap-2 rounded-2xl border-2 border-gray-200 bg-white p-1.5 shadow-sm focus-within:border-blue-400">

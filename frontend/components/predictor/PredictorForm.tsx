@@ -455,9 +455,9 @@ export function PredictorForm() {
         </div>
       </div>
 
-      <div className="border-t border-slate-100 bg-orange-50/60 px-6 py-3">
-        <p className="flex items-center gap-2 text-xs text-orange-700">
-          <ShieldAlert className="h-4 w-4 shrink-0" />
+      <div className="border-t border-slate-100 bg-orange-50/60 px-6 py-3 dark:border-slate-800 dark:bg-orange-950/30">
+        <p className="flex items-center gap-2 text-xs text-orange-700 dark:text-orange-300 font-medium">
+          <ShieldAlert className="h-4 w-4 shrink-0 text-orange-600 dark:text-orange-400" />
           This prediction is an estimate based on curated data and does not guarantee admission.
         </p>
       </div>
@@ -525,9 +525,9 @@ export function PredictorResults({
         })}
       </div>
 
-      <div className="mt-10 flex items-start gap-3 rounded-2xl border border-orange-100 bg-orange-50/70 p-5">
-        <ShieldAlert className="h-5 w-5 shrink-0 text-orange-500" />
-        <p className="text-sm text-orange-800">
+      <div className="mt-10 flex items-start gap-3 rounded-2xl border border-orange-100 bg-orange-50/70 p-5 dark:border-orange-900/40 dark:bg-orange-950/30">
+        <ShieldAlert className="h-5 w-5 shrink-0 text-orange-500 dark:text-orange-400" />
+        <p className="text-sm text-orange-800 dark:text-orange-300">
           The prediction is an estimate and does not guarantee admission. Cutoffs change every year based on
           exam difficulty and seat availability. Always cross-check with official counselling brochures and
           rank predictors for your specific exam.

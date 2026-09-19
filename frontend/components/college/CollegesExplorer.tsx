@@ -91,16 +91,16 @@ export default function CollegesExplorer() {
   return (
     <div>
       {/* header band */}
-      <section className="relative isolate overflow-hidden bg-gradient-to-br from-purple-100/70 via-white to-blue-50/70">
+      <section className="relative isolate overflow-hidden bg-gradient-to-br from-purple-100/70 via-white to-blue-50/70 dark:from-purple-950/60 dark:via-slate-900 dark:to-blue-950/60 dark:border-b dark:border-purple-900/40">
         <div className="pointer-events-none absolute inset-0 -z-10">
           <div className="absolute -left-16 -top-20 h-72 w-72 rounded-full bg-purple-400/20 blur-3xl" />
           <div className="absolute -right-10 -top-10 h-64 w-64 rounded-full bg-orange-300/20 blur-3xl" />
         </div>
         <div className="mx-auto max-w-7xl px-4 py-10 sm:px-6 lg:px-8">
-          <h1 className="font-display text-3xl font-extrabold tracking-tight text-purple-950 sm:text-4xl">
+          <h1 className="font-display text-3xl font-extrabold tracking-tight text-purple-950 dark:text-white sm:text-4xl">
             Explore Colleges
           </h1>
-          <p className="mt-2 max-w-xl text-sm text-gray-600 sm:text-base">
+          <p className="mt-2 max-w-xl text-sm text-gray-600 dark:text-gray-300 sm:text-base">
             Search by name, course, city or specialization and refine with
             powerful filters.
           </p>

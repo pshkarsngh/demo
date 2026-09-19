@@ -248,15 +248,15 @@ export function ReviewsExplorer() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-4 rounded-2xl border border-purple-100 bg-gradient-to-r from-purple-50 to-indigo-50 p-5 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex flex-col gap-4 rounded-2xl border border-purple-100 dark:border-purple-900/40 bg-gradient-to-r from-purple-50 to-indigo-50 dark:from-slate-900 dark:via-purple-950/50 dark:to-slate-900 p-5 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-4">
           <div>
-            <p className="font-display text-4xl font-extrabold text-purple-900">{avg.toFixed(1)}</p>
+            <p className="font-display text-4xl font-extrabold text-purple-900 dark:text-purple-300">{avg.toFixed(1)}</p>
             <Rating value={Math.round(avg)} size={14} />
           </div>
           <div>
-            <p className="text-sm font-bold text-gray-900">{all.length} verified reviews</p>
-            <p className="text-xs text-slate-500">Across {COLLEGES.length} colleges on Padhaanewala</p>
+            <p className="text-sm font-bold text-gray-900 dark:text-white">{all.length} verified reviews</p>
+            <p className="text-xs text-slate-500 dark:text-gray-300">Across {COLLEGES.length} colleges on Padhaanewala</p>
           </div>
         </div>
         <Button variant="accent" onClick={() => setShowForm(true)}>

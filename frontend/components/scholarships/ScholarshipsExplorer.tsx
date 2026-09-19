@@ -128,10 +128,10 @@ export default function ScholarshipsExplorer() {
         <p className="mb-2 flex items-center gap-2 text-xs font-bold uppercase tracking-[0.14em] text-orange-600">
           <GraduationCap className="h-4 w-4" /> Financial support
         </p>
-        <h1 className="font-display text-3xl font-extrabold tracking-tight text-purple-950 sm:text-4xl">
+        <h1 className="font-display text-3xl font-extrabold tracking-tight text-purple-950 dark:text-white sm:text-4xl">
           Scholarships & Grants
         </h1>
-        <p className="mt-3 text-sm leading-relaxed text-gray-600 sm:text-base">
+        <p className="mt-3 text-sm leading-relaxed text-gray-600 dark:text-gray-300 sm:text-base">
           From national schemes like NSP and Pragati to major private foundations,
           explore funding that can make your education more affordable.
         </p>

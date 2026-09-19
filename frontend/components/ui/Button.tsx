@@ -9,15 +9,15 @@ const variants: Record<Variant, string> = {
   primary:
     "bg-brand-gradient text-white hover:brightness-110 active:brightness-95 shadow-md shadow-purple-600/25",
   secondary:
-    "bg-blue-50 text-blue-700 hover:bg-blue-100 ring-1 ring-inset ring-blue-200 hover:ring-blue-300",
+    "bg-blue-50 dark:bg-slate-800 text-blue-700 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-slate-700 ring-1 ring-inset ring-blue-200 dark:ring-slate-700 hover:ring-blue-300",
   accent:
     "bg-orange-500 text-white hover:bg-orange-600 active:bg-orange-700 shadow-sm shadow-orange-500/30",
   "warm-gradient":
     "bg-warm-gradient text-white hover:brightness-110 active:brightness-95 shadow-md shadow-orange-500/30",
   outline:
-    "bg-white text-purple-700 ring-1 ring-inset ring-purple-200 hover:ring-purple-400 hover:bg-purple-50",
-  ghost: "bg-transparent text-purple-700 hover:bg-purple-50",
-  danger: "bg-red-50 text-red-600 hover:bg-red-100 ring-1 ring-inset ring-red-200",
+    "bg-white dark:bg-slate-800 text-purple-700 dark:text-purple-300 ring-1 ring-inset ring-purple-200 dark:ring-slate-700 hover:ring-purple-400 hover:bg-purple-50 dark:hover:bg-slate-700",
+  ghost: "bg-transparent text-purple-700 dark:text-purple-300 hover:bg-purple-50 dark:hover:bg-slate-800",
+  danger: "bg-red-50 dark:bg-red-950/40 text-red-600 dark:text-red-300 hover:bg-red-100 dark:hover:bg-red-900/50 ring-1 ring-inset ring-red-200 dark:ring-red-900/50",
   warm: "bg-amber-400 text-black hover:bg-amber-300 shadow-sm shadow-amber-400/30",
 };
 
