@@ -21,9 +21,11 @@ import {
   RefreshCw,
   ShieldAlert,
   ShieldCheck,
+  Sun,
   Target,
   Timer,
   Trophy,
+  User,
   Video,
   XCircle,
 } from "lucide-react";
@@ -477,6 +479,62 @@ export function ProctoredMockTest({ test }: { test: MockTest }) {
                 );
               })}
             </ul>
+
+            <div className="mt-6 rounded-2xl border border-white/10 bg-white/5 p-4">
+              <h3 className="flex items-center gap-2 text-sm font-bold text-white">
+                <Video className="h-4 w-4 text-red-400" /> Camera guidelines
+              </h3>
+              <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-[170px_1fr]">
+                <div className="flex items-center justify-center overflow-hidden rounded-xl border border-white/10 bg-black">
+                  {perms.camera === "granted" ? (
+                    <video
+                      ref={attachVideoNode}
+                      autoPlay
+                      playsInline
+                      muted
+                      className="aspect-[3/4] w-full max-h-52 object-cover"
+                    />
+                  ) : (
+                    <div className="grid aspect-[3/4] w-full max-h-52 place-items-center p-4 text-center text-[11px] text-slate-500">
+                      <span>
+                        <Video className="mx-auto h-6 w-6" />
+                        Live preview appears here once camera is allowed
+                      </span>
+                    </div>
+                  )}
+                </div>
+                <ul className="space-y-2 text-xs text-slate-300">
+                  <li className="flex items-start gap-2">
+                    <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-400" />
+                    Position your face <b className="text-white">fully inside the frame</b>, centered and looking straight at the camera.
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-400" />
+                    Make sure <b className="text-white">both eyes are clearly visible</b> and your head is not turned away.
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <Sun className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-400" />
+                    Keep <b className="text-white">good lighting on your face</b> — a light source in front of you, not behind.
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <User className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-400" />
+                    Sit <b className="text-white">still and face the camera</b> while answering. Use the preview to adjust before you begin.
+                  </li>
+                </ul>
+              </div>
+              <div className="mt-3 rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-3">
+                <ul className="space-y-1 text-xs text-red-300">
+                  <li className="flex items-start gap-2">
+                    <XCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                    Do not cover your face, turn away, look off-frame or down at a phone during the test.
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <XCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                    Avoid a dark room or a bright light behind you, and do not let anyone else enter the frame.
+                  </li>
+                </ul>
+              </div>
+            </div>
 
             <div className="mt-6 flex flex-col gap-3 sm:flex-row">
               <Button
