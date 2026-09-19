@@ -627,18 +627,18 @@ export function ProctoredMockTest({ test }: { test: MockTest }) {
     const grade = pct >= 80 ? "Excellent" : pct >= 60 ? "Good" : pct >= 40 ? "Average" : "Needs practice";
     const gradeTone: "green" | "yellow" | "amber" | "red" = pct >= 80 ? "green" : pct >= 60 ? "yellow" : pct >= 40 ? "amber" : "red";
     const stats = [
-      { label: "Score", value: `${Math.max(0, result.score)}/${result.maxScore}`, tone: "text-purple-700 bg-purple-50" },
-      { label: "Percentage", value: `${pct}%`, tone: "text-blue-700 bg-blue-50" },
-      { label: "Correct", value: String(result.correct), tone: "text-green-700 bg-green-50" },
-      { label: "Incorrect", value: String(result.incorrect), tone: "text-red-700 bg-red-50" },
-      { label: "Unattempted", value: String(result.unattempted), tone: "text-slate-600 bg-slate-100" },
-      { label: "Time taken", value: timeStr, tone: "text-orange-700 bg-orange-50" },
+      { label: "Score", value: `${Math.max(0, result.score)}/${result.maxScore}`, tone: "text-purple-700 bg-purple-50 dark:bg-purple-950/70 dark:text-purple-300" },
+      { label: "Percentage", value: `${pct}%`, tone: "text-blue-700 bg-blue-50 dark:bg-blue-950/70 dark:text-blue-300" },
+      { label: "Correct", value: String(result.correct), tone: "text-green-700 bg-green-50 dark:bg-emerald-950/70 dark:text-emerald-300" },
+      { label: "Incorrect", value: String(result.incorrect), tone: "text-red-700 bg-red-50 dark:bg-rose-950/70 dark:text-rose-300" },
+      { label: "Unattempted", value: String(result.unattempted), tone: "text-slate-600 bg-slate-100 dark:bg-slate-800 dark:text-slate-300" },
+      { label: "Time taken", value: timeStr, tone: "text-orange-700 bg-orange-50 dark:bg-amber-950/70 dark:text-amber-300" },
     ];
 
     return (
-      <div className="fixed inset-0 z-[100] overflow-y-auto bg-slate-100">
+      <div className="fixed inset-0 z-[100] overflow-y-auto bg-slate-100 dark:bg-[#090d16]">
         <div className="mx-auto max-w-4xl px-4 py-10 sm:px-6">
-          <div className="rounded-3xl border border-purple-100 bg-gradient-to-r from-purple-700 via-indigo-700 to-purple-700 p-8 text-center text-white">
+          <div className="rounded-3xl border border-purple-100 dark:border-purple-900/50 bg-gradient-to-r from-purple-700 via-indigo-700 to-purple-700 p-8 text-center text-white">
             <Trophy className="mx-auto h-10 w-10 text-amber-300" />
             <h2 className="mt-3 font-display text-2xl font-extrabold sm:text-3xl">
               Test completed!{pct >= 80 ? " 🎉" : ""}
@@ -665,11 +665,11 @@ export function ProctoredMockTest({ test }: { test: MockTest }) {
           </div>
 
           {violations.length > 0 && (
-            <div className="mt-5 rounded-2xl border border-amber-200 bg-amber-50 p-4">
-              <p className="flex items-center gap-2 text-sm font-semibold text-amber-900">
+            <div className="mt-5 rounded-2xl border border-amber-200 dark:border-amber-800/60 bg-amber-50 dark:bg-amber-950/40 p-4">
+              <p className="flex items-center gap-2 text-sm font-semibold text-amber-900 dark:text-amber-200">
                 <ShieldAlert className="h-4 w-4" /> {violations.length} proctoring violation(s) recorded during this test
               </p>
-              <ul className="mt-2 space-y-1 text-xs text-amber-800">
+              <ul className="mt-2 space-y-1 text-xs text-amber-800 dark:text-amber-300">
                 {violations.map((v, i) => (
                   <li key={i}>• {v.reason}</li>
                 ))}
@@ -679,20 +679,20 @@ export function ProctoredMockTest({ test }: { test: MockTest }) {
 
           <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
             {stats.map((s) => (
-              <div key={s.label} className="rounded-2xl border border-slate-100 bg-white p-4 text-center">
+              <div key={s.label} className="rounded-2xl border border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 text-center">
                 <span className={cn("mx-auto grid h-9 w-9 place-items-center rounded-xl", s.tone)}>
                   <Target className="h-4 w-4" />
                 </span>
-                <p className="mt-2 text-lg font-extrabold text-gray-900">{s.value}</p>
+                <p className="mt-2 text-lg font-extrabold text-gray-900 dark:text-white">{s.value}</p>
                 <p className="text-[11px] text-slate-400">{s.label}</p>
               </div>
             ))}
           </div>
 
           <div className="mt-6 grid grid-cols-1 gap-5 lg:grid-cols-[1fr_260px]">
-            <div className="rounded-2xl border border-slate-100 bg-white p-5">
-              <h3 className="flex items-center gap-2 font-bold text-gray-900">
-                <ListChecks className="h-4 w-4 text-purple-600" /> Topic-wise performance
+            <div className="rounded-2xl border border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 p-5">
+              <h3 className="flex items-center gap-2 font-bold text-gray-900 dark:text-white">
+                <ListChecks className="h-4 w-4 text-purple-600 dark:text-purple-400" /> Topic-wise performance
               </h3>
               <div className="mt-4 space-y-3">
                 {Object.entries(result.topicPerf).map(([topic, perf]) => {
@@ -700,10 +700,10 @@ export function ProctoredMockTest({ test }: { test: MockTest }) {
                   return (
                     <div key={topic}>
                       <div className="mb-1 flex items-center justify-between text-xs">
-                        <span className="font-medium text-slate-600">{topic}</span>
+                        <span className="font-medium text-slate-600 dark:text-slate-300">{topic}</span>
                         <span className="text-slate-400">{perf.correct}/{perf.total}</span>
                       </div>
-                      <div className="h-2 overflow-hidden rounded-full bg-slate-100">
+                      <div className="h-2 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
                         <div
                           className={cn("h-full rounded-full", p >= 70 ? "bg-green-500" : p >= 40 ? "bg-amber-400" : "bg-red-400")}
                           style={{ width: `${p}%` }}
@@ -742,9 +742,9 @@ export function ProctoredMockTest({ test }: { test: MockTest }) {
                 const chosen = answers[q.id]?.selected;
                 const isCorrect = chosen === q.correctIndex;
                 return (
-                  <div key={q.id} className="rounded-2xl border border-slate-100 bg-white p-5">
+                  <div key={q.id} className="rounded-2xl border border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 p-5">
                     <div className="flex items-start justify-between gap-3">
-                      <p className="font-medium text-gray-900">Q{i + 1}. {q.text}</p>
+                      <p className="font-medium text-gray-900 dark:text-white">Q{i + 1}. {q.text}</p>
                       {chosen === undefined || chosen === null ? (
                         <Badge variant="amber">Unattempted</Badge>
                       ) : isCorrect ? (
@@ -758,20 +758,23 @@ export function ProctoredMockTest({ test }: { test: MockTest }) {
                         <p
                           key={oi}
                           className={cn(
-                            "flex items-center gap-2 rounded-lg px-3 py-1.5 text-sm",
-                            oi === q.correctIndex && "bg-green-50 text-green-800 font-medium",
-                            oi === chosen && oi !== q.correctIndex && "bg-red-50 text-red-700",
+                            "flex items-center gap-2 rounded-lg px-3 py-2 text-sm transition border",
+                            oi === q.correctIndex && "border-green-200 bg-green-50 text-green-800 font-medium dark:border-emerald-800/60 dark:bg-emerald-950/50 dark:text-emerald-300",
+                            oi === chosen && oi !== q.correctIndex && "border-red-200 bg-red-50 text-red-700 dark:border-rose-800/60 dark:bg-rose-950/50 dark:text-rose-300",
+                            oi !== q.correctIndex && oi !== chosen && "border-transparent text-slate-700 dark:text-slate-300",
                           )}
                         >
                           {String.fromCharCode(65 + oi)}. {opt}
-                          {oi === q.correctIndex && <CheckCircle2 className="h-4 w-4 text-green-600" />}
-                          {oi === chosen && oi !== q.correctIndex && <XCircle className="h-4 w-4 text-red-500" />}
+                          {oi === q.correctIndex && <CheckCircle2 className="h-4 w-4 text-green-600 dark:text-emerald-400 shrink-0 ml-auto" />}
+                          {oi === chosen && oi !== q.correctIndex && <XCircle className="h-4 w-4 text-red-500 dark:text-rose-400 shrink-0 ml-auto" />}
                         </p>
                       ))}
                     </div>
-                    <p className="mt-3 rounded-xl bg-purple-50 p-3 text-sm text-purple-900">
-                      <b>Explanation:</b> {q.explanation}
-                    </p>
+                    {q.explanation && (
+                      <p className="mt-3 rounded-xl border border-purple-100 bg-purple-50 p-3 text-sm text-purple-900 dark:border-purple-900/50 dark:bg-purple-950/40 dark:text-purple-200">
+                        <b className="text-purple-900 dark:text-purple-300">Explanation:</b> {q.explanation}
+                      </p>
+                    )}
                   </div>
                 );
               })}
@@ -788,7 +791,7 @@ export function ProctoredMockTest({ test }: { test: MockTest }) {
   const hh = String(Math.floor(timeLeft / 3600)).padStart(2, "0");
 
   return (
-    <div className="fixed inset-0 z-[100] select-none overflow-hidden bg-slate-100">
+    <div className="fixed inset-0 z-[100] select-none overflow-hidden bg-slate-100 dark:bg-[#090d16]">
       {/* Proctor bar */}
       <div className="flex items-center justify-between gap-3 border-b border-red-900/40 bg-slate-950 px-4 py-2">
         <div className="flex items-center gap-2 text-xs font-semibold text-white">
@@ -819,15 +822,15 @@ export function ProctoredMockTest({ test }: { test: MockTest }) {
 
       <div className="mx-auto flex h-[calc(100%-40px)] max-w-6xl flex-col overflow-hidden p-4">
         {/* Top bar */}
-        <div className="flex items-center justify-between gap-3 rounded-2xl border border-slate-100 bg-white px-4 py-3 shadow-sm">
+        <div className="flex items-center justify-between gap-3 rounded-2xl border border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 px-4 py-3 shadow-sm">
           <div className="min-w-0">
-            <p className="truncate text-sm font-bold text-gray-900">{test.title}</p>
-            <p className="text-xs text-slate-400">
+            <p className="truncate text-sm font-bold text-gray-900 dark:text-white">{test.title}</p>
+            <p className="text-xs text-slate-400 dark:text-slate-400">
               Question {current + 1} of {questions.length}
             </p>
           </div>
           <div className="flex items-center gap-2">
-            <span className="flex items-center gap-1.5 rounded-full bg-purple-50 px-3 py-1.5 text-sm font-bold tabular-nums text-purple-700">
+            <span className="flex items-center gap-1.5 rounded-full bg-purple-50 dark:bg-purple-950/70 text-purple-700 dark:text-purple-300 dark:border dark:border-purple-800/50 px-3 py-1.5 text-sm font-bold tabular-nums">
               <Timer className="h-4 w-4" /> {hh}:{mm}:{ss}
             </span>
             <Button variant="danger" size="sm" onClick={() => setConfirmOpen(true)}>
@@ -838,7 +841,7 @@ export function ProctoredMockTest({ test }: { test: MockTest }) {
 
         <div className="mt-4 grid flex-1 grid-cols-1 gap-4 overflow-hidden lg:grid-cols-[1fr_260px]">
           {/* Question */}
-          <div className="overflow-y-auto rounded-2xl border border-slate-100 bg-white p-5 sm:p-6">
+          <div className="overflow-y-auto rounded-2xl border border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 p-5 sm:p-6">
             <div className="flex items-start justify-between gap-3">
               <Badge variant="purple">Q{current + 1} · {q.topic}</Badge>
               <button
@@ -848,13 +851,13 @@ export function ProctoredMockTest({ test }: { test: MockTest }) {
                   "inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-semibold transition",
                   answers[q.id]?.marked
                     ? "border-purple-600 bg-purple-600 text-white"
-                    : "border-slate-200 bg-white text-slate-600 hover:border-purple-300",
+                    : "border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:border-purple-300 dark:hover:border-purple-600",
                 )}
               >
                 <Flag className="h-3.5 w-3.5" /> {answers[q.id]?.marked ? "Marked" : "Mark for review"}
               </button>
             </div>
-            <p className="mt-4 text-base font-medium leading-relaxed text-gray-900 sm:text-lg">{q.text}</p>
+            <p className="mt-4 text-base font-bold leading-relaxed text-gray-900 dark:text-white sm:text-lg">{q.text}</p>
             <div className="mt-5 space-y-2.5">
               {q.options.map((opt, i) => {
                 const selected = answers[q.id]?.selected === i;
@@ -866,14 +869,16 @@ export function ProctoredMockTest({ test }: { test: MockTest }) {
                     className={cn(
                       "flex w-full items-center gap-3 rounded-xl border px-4 py-3 text-left text-sm transition",
                       selected
-                        ? "border-purple-500 bg-purple-50 text-purple-800"
-                        : "border-slate-200 bg-white text-slate-700 hover:border-purple-300",
+                        ? "border-purple-500 bg-purple-50 dark:bg-purple-950/60 text-purple-800 dark:text-purple-200 font-semibold"
+                        : "border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 hover:border-purple-300 dark:hover:border-purple-700",
                     )}
                   >
                     <span
                       className={cn(
                         "grid h-6 w-6 shrink-0 place-items-center rounded-full border text-xs font-bold",
-                        selected ? "border-purple-600 bg-purple-600 text-white" : "border-slate-300 text-slate-500",
+                        selected
+                          ? "border-purple-600 bg-purple-600 text-white"
+                          : "border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-500 dark:text-slate-400",
                       )}
                     >
                       {String.fromCharCode(65 + i)}
@@ -883,8 +888,8 @@ export function ProctoredMockTest({ test }: { test: MockTest }) {
                 );
               })}
             </div>
-            <div className="mt-6 flex items-center justify-between border-t border-slate-100 pt-4">
-              <Button variant="ghost" disabled={current === 0} onClick={() => setCurrent((c) => Math.max(0, c - 1))}>
+            <div className="mt-6 flex items-center justify-between border-t border-slate-100 dark:border-slate-800 pt-4">
+              <Button variant="ghost" disabled={current === 0} onClick={() => setCurrent((c) => Math.max(0, c - 1))} className="dark:text-slate-300 dark:hover:bg-slate-800">
                 <ChevronLeft className="h-4 w-4" /> Previous
               </Button>
               <Button variant="secondary" onClick={() => setCurrent((c) => Math.min(questions.length - 1, c + 1))}>
@@ -894,10 +899,10 @@ export function ProctoredMockTest({ test }: { test: MockTest }) {
           </div>
 
           {/* Palette */}
-          <div className="overflow-y-auto rounded-2xl border border-slate-100 bg-white p-4">
+          <div className="overflow-y-auto rounded-2xl border border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 p-4">
             <div className="flex items-center justify-between">
-              <h3 className="text-sm font-bold text-gray-900">Question palette</h3>
-              <span className="text-xs text-slate-400">{answeredCount + markedCount}/{questions.length}</span>
+              <h3 className="text-sm font-bold text-gray-900 dark:text-white">Question palette</h3>
+              <span className="text-xs text-slate-400 dark:text-slate-400">{answeredCount + markedCount}/{questions.length}</span>
             </div>
             <div className="mt-3 grid grid-cols-5 gap-1.5">
               {questions.map((qq, i) => {
@@ -909,11 +914,11 @@ export function ProctoredMockTest({ test }: { test: MockTest }) {
                     onClick={() => setCurrent(i)}
                     className={cn(
                       "grid h-8 w-8 place-items-center rounded-lg text-xs font-bold transition",
-                      i === current ? "ring-2 ring-purple-500 ring-offset-1" : "",
+                      i === current ? "ring-2 ring-purple-500 ring-offset-1 dark:ring-offset-slate-900" : "",
                       st === "answered" && "bg-green-500 text-white",
                       st === "marked" && "bg-purple-600 text-white",
                       st === "unanswered" && "bg-orange-400 text-white",
-                      st === "not-visited" && "bg-slate-100 text-slate-600",
+                      st === "not-visited" && "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300",
                     )}
                   >
                     {i + 1}
@@ -921,24 +926,24 @@ export function ProctoredMockTest({ test }: { test: MockTest }) {
                 );
               })}
             </div>
-            <div className="mt-4 space-y-1.5 text-[11px] text-slate-500">
+            <div className="mt-4 space-y-1.5 text-[11px] text-slate-500 dark:text-slate-400">
               <p className="flex items-center gap-2"><span className="h-3 w-3 rounded bg-green-500" /> Answered</p>
               <p className="flex items-center gap-2"><span className="h-3 w-3 rounded bg-orange-400" /> Not answered</p>
               <p className="flex items-center gap-2"><span className="h-3 w-3 rounded bg-purple-600" /> Marked for review</p>
-              <p className="flex items-center gap-2"><span className="h-3 w-3 rounded bg-slate-100" /> Not visited</p>
+              <p className="flex items-center gap-2"><span className="h-3 w-3 rounded bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700" /> Not visited</p>
             </div>
-            <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-3">
-              <div className="flex items-center justify-center gap-2 text-[11px] font-medium text-gray-700">
+            <div className="mt-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50 p-3">
+              <div className="flex items-center justify-center gap-2 text-[11px] font-medium text-gray-700 dark:text-slate-300">
                 <video
                   ref={attachVideoNode}
                   autoPlay
                   playsInline
                   muted
-                  className="aspect-[4/3] w-full max-w-[140px] rounded-lg border border-slate-300 bg-black object-cover"
+                  className="aspect-[4/3] w-full max-w-[140px] rounded-lg border border-slate-300 dark:border-slate-700 bg-black object-cover"
                 />
               </div>
-              <p className="mt-2 text-center text-[10px] font-semibold text-emerald-600">
-                <Lock className="inline h-3 w-3" /> Proctoring active
+              <p className="mt-2 text-center text-[10px] font-semibold text-emerald-600 dark:text-emerald-400 flex items-center justify-center gap-1">
+                <Lock className="h-3 w-3" /> Proctoring active
               </p>
             </div>
           </div>

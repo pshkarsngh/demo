@@ -48,9 +48,9 @@ export function AIChat() {
   };
 
   return (
-    <div className="mx-auto flex h-[calc(100dvh-8.5rem)] max-w-3xl flex-col overflow-hidden rounded-3xl border border-purple-100 bg-white shadow-xl shadow-purple-900/5">
+    <div className="mx-auto flex h-[calc(100dvh-8.5rem)] max-w-3xl flex-col overflow-hidden rounded-3xl border border-purple-100 dark:border-slate-800 bg-white dark:bg-slate-900 shadow-xl shadow-purple-900/5 dark:shadow-purple-950/20">
       {/* Header */}
-      <div className="flex items-center justify-between border-b border-purple-100 bg-gradient-to-r from-purple-700 to-indigo-700 px-5 py-4">
+      <div className="flex items-center justify-between border-b border-purple-100 dark:border-slate-800 bg-gradient-to-r from-purple-700 to-indigo-700 px-5 py-4">
         <div className="flex items-center gap-3">
           <span className="grid h-10 w-10 place-items-center rounded-full bg-white/15 text-white ring-1 ring-white/25">
             <Sparkles className="h-5 w-5" />
@@ -77,7 +77,9 @@ export function AIChat() {
             <span
               className={cn(
                 "mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-full",
-                m.role === "ai" ? "bg-purple-100 text-purple-600" : "bg-slate-100 text-slate-500",
+                m.role === "ai"
+                  ? "bg-purple-100 dark:bg-purple-950/80 text-purple-600 dark:text-purple-300"
+                  : "bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-300",
               )}
             >
               {m.role === "ai" ? <Bot className="h-4 w-4" /> : <User className="h-4 w-4" />}
@@ -86,7 +88,7 @@ export function AIChat() {
               className={cn(
                 "max-w-[82%] whitespace-pre-wrap rounded-2xl px-4 py-3 text-sm leading-relaxed",
                 m.role === "ai"
-                  ? "rounded-tl-sm border border-slate-100 bg-slate-50 text-slate-800"
+                  ? "rounded-tl-sm border border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/80 text-slate-800 dark:text-slate-100"
                   : "rounded-tr-sm bg-purple-600 text-white",
               )}
             >
@@ -96,12 +98,12 @@ export function AIChat() {
         ))}
         {loading && (
           <div className="flex gap-3">
-            <span className="mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-full bg-purple-100 text-purple-600">
+            <span className="mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-full bg-purple-100 dark:bg-purple-950/80 text-purple-600 dark:text-purple-300">
               <Bot className="h-4 w-4" />
             </span>
-            <div className="flex items-center gap-1.5 rounded-2xl rounded-tl-sm border border-slate-100 bg-slate-50 px-4 py-3">
-              <Loader2 className="h-4 w-4 animate-spin text-purple-500" />
-              <span className="text-sm text-slate-500">Thinking...</span>
+            <div className="flex items-center gap-1.5 rounded-2xl rounded-tl-sm border border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/80 px-4 py-3">
+              <Loader2 className="h-4 w-4 animate-spin text-purple-500 dark:text-purple-400" />
+              <span className="text-sm text-slate-500 dark:text-slate-400">Thinking...</span>
             </div>
           </div>
         )}
@@ -109,8 +111,8 @@ export function AIChat() {
       </div>
 
       {/* Suggested questions */}
-      <div className="border-t border-slate-100 bg-slate-50/60 px-4 py-2.5">
-        <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+      <div className="border-t border-slate-100 dark:border-slate-800/80 bg-slate-50/60 dark:bg-slate-800/50 px-4 py-2.5">
+        <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-400">
           Suggested questions
         </p>
         <div className="flex flex-nowrap gap-2 overflow-x-auto pb-1 no-scrollbar">
@@ -120,7 +122,7 @@ export function AIChat() {
               type="button"
               onClick={() => send(q)}
               disabled={loading}
-              className="shrink-0 rounded-full border border-purple-200 bg-white px-3 py-1.5 text-xs font-medium text-purple-700 transition hover:bg-purple-50"
+              className="shrink-0 rounded-full border border-purple-200 dark:border-purple-800/60 bg-white dark:bg-slate-800 px-3 py-1.5 text-xs font-medium text-purple-700 dark:text-purple-300 transition hover:bg-purple-50 dark:hover:bg-slate-700"
             >
               {q}
             </button>
@@ -134,13 +136,13 @@ export function AIChat() {
           e.preventDefault();
           send(input);
         }}
-        className="flex items-center gap-2 border-t border-slate-100 bg-white p-3"
+        className="flex items-center gap-2 border-t border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 p-3"
       >
         <input
           value={input}
           onChange={(e) => setInput(e.target.value)}
           placeholder="Ask about courses, colleges, exams..."
-          className="h-11 flex-1 rounded-xl border border-slate-200 bg-slate-50 px-4 text-sm outline-none transition focus:border-purple-400 focus:bg-white focus:ring-4 focus:ring-purple-100"
+          className="h-11 flex-1 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-4 text-sm text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 outline-none transition focus:border-purple-400 dark:focus:border-purple-500 focus:bg-white dark:focus:bg-slate-800 focus:ring-4 focus:ring-purple-100 dark:focus:ring-purple-900/30"
           aria-label="Type your question"
         />
         <Button type="submit" size="icon" disabled={loading || !input.trim()} aria-label="Send">
@@ -148,7 +150,7 @@ export function AIChat() {
         </Button>
       </form>
 
-      <p className="border-t border-slate-50 bg-white pb-2 text-center text-[11px] text-slate-400">
+      <p className="border-t border-slate-100 dark:border-slate-800 bg-white dark:bg-slate-900 pb-2 pt-1 text-center text-[11px] text-slate-400 dark:text-slate-500">
         AI responses are informational and may not be fully accurate. Verify details on official websites.
       </p>
     </div>
@@ -157,19 +159,19 @@ export function AIChat() {
 
 export function AiPromoCard() {
   return (
-    <div className="rounded-3xl border border-purple-100 bg-gradient-to-br from-purple-50 via-white to-indigo-50 p-6">
+    <div className="rounded-3xl border border-purple-100 dark:border-purple-900/40 bg-gradient-to-br from-purple-50 via-white to-indigo-50 dark:from-slate-900 dark:via-purple-950/40 dark:to-slate-900 p-6">
       <div className="flex items-center gap-3">
         <span className="grid h-11 w-11 place-items-center rounded-2xl bg-purple-600 text-white shadow-md shadow-purple-600/30">
           <Sparkles className="h-5 w-5" />
         </span>
         <div>
-          <h3 className="font-bold text-gray-900">Get instant answers</h3>
-          <p className="text-sm text-gray-500">Ask the AI assistant anything about your education journey</p>
+          <h3 className="font-bold text-gray-900 dark:text-white">Get instant answers</h3>
+          <p className="text-sm text-gray-500 dark:text-slate-400">Ask the AI assistant anything about your education journey</p>
         </div>
       </div>
       <Link
         href="/ask-ai"
-        className="mt-4 inline-flex items-center gap-1.5 text-sm font-semibold text-purple-700 hover:text-purple-800"
+        className="mt-4 inline-flex items-center gap-1.5 text-sm font-semibold text-purple-700 dark:text-purple-300 hover:text-purple-800 dark:hover:text-purple-200"
       >
         Start a conversation <ArrowRight className="h-4 w-4" />
       </Link>

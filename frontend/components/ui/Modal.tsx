@@ -48,24 +48,24 @@ export function Modal({ open, onClose, title, children, className }: ModalProps)
         ref={panelRef}
         tabIndex={-1}
         className={cn(
-          "relative z-10 max-h-[88vh] w-full overflow-auto rounded-t-3xl bg-white shadow-2xl outline-none animate-fade-up",
+          "relative z-10 max-h-[88vh] w-full overflow-auto rounded-t-3xl bg-white dark:bg-slate-900 dark:border dark:border-slate-800 shadow-2xl outline-none animate-fade-up",
           "sm:max-w-lg sm:rounded-2xl",
           className,
         )}
       >
         {title && (
-          <div className="sticky top-0 flex items-center justify-between gap-4 border-b border-gray-100 bg-white/95 px-5 py-4 backdrop-blur">
-            <h2 className="text-base font-semibold text-gray-900">{title}</h2>
+          <div className="sticky top-0 flex items-center justify-between gap-4 border-b border-gray-100 dark:border-slate-800 bg-white/95 dark:bg-slate-900/95 px-5 py-4 backdrop-blur">
+            <h2 className="text-base font-semibold text-gray-900 dark:text-white">{title}</h2>
             <button
               aria-label="Close"
               onClick={onClose}
-              className="grid h-8 w-8 place-items-center rounded-lg text-gray-400 transition hover:bg-gray-100 hover:text-gray-700"
+              className="grid h-8 w-8 place-items-center rounded-lg text-gray-400 dark:text-slate-400 transition hover:bg-gray-100 dark:hover:bg-slate-800 hover:text-gray-700 dark:hover:text-slate-200"
             >
               <X className="h-4 w-4" />
             </button>
           </div>
         )}
-        <div className="p-5">{children}</div>
+        <div className="p-5 text-gray-900 dark:text-slate-100">{children}</div>
       </div>
     </div>
   );
