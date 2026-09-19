@@ -186,7 +186,7 @@ export default function CollegesExplorer() {
                   actionLabel="Reset all filters"
                 />
               ) : (
-                <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
+                <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
                   {colleges.map((college) => (
                     <CollegeCard key={college.id} college={college} />
                   ))}

@@ -42,7 +42,7 @@ export function HeroContent() {
       {/* description */}
       <motion.p
         {...fade(0.3)}
-        className="mt-5 max-w-[540px] text-[16px] leading-relaxed text-white/75 sm:text-[17px]"
+        className="mt-5 max-w-[680px] text-[16px] leading-relaxed text-white/75 sm:text-[18px]"
       >
         Explore colleges, compare courses, understand fees, and discover
         opportunities that match your goals.
@@ -53,7 +53,7 @@ export function HeroContent() {
         initial={{ opacity: 0, y: reduce ? 0 : 24, scale: reduce ? 1 : 0.98 }}
         animate={{ opacity: 1, y: 0, scale: 1 }}
         transition={{ duration: 0.65, delay: 0.42, ease: [0.22, 1, 0.36, 1] }}
-        className="mt-7 max-w-xl"
+        className="mt-7 max-w-2xl"
       >
         <HeroSearch />
         {/* Popup predictor CTA */}

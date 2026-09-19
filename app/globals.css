@@ -18,6 +18,20 @@
   --color-sun: #fbbf24;
 }
 
+/* Wide screen container max-width overrides */
+.max-w-7xl {
+  max-width: 1720px;
+}
+.max-w-6xl {
+  max-width: 1560px;
+}
+.max-w-5xl {
+  max-width: 1420px;
+}
+.max-w-4xl {
+  max-width: 1280px;
+}
+
 :root {
   --background: #fbfbfd;
   --foreground: #232038;
