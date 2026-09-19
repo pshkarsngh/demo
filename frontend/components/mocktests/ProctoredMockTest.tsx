@@ -154,6 +154,11 @@ export function ProctoredMockTest({ test }: { test: MockTest }) {
     if (el && cameraStreamRef.current) el.srcObject = cameraStreamRef.current;
   }, []);
 
+  // ---------- Face-lighting monitor ----------
+  const [lightLevel, setLightLevel] = useState<"checking" | "good" | "poor">("checking");
+  const lightCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const lightingIssueRef = useRef(false);
+
   const stopScreenSharingEvent = useCallback(() => {
     const t = screenStreamRef.current?.getVideoTracks()[0];
     if (t) t.onended = null;
