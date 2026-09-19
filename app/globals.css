@@ -474,3 +474,68 @@ select:focus-visible {
   -ms-overflow-style: none;
   scrollbar-width: none;
 }
+
+/* From Uiverse.io by satyamchaudharydev - Animated Arrow Button */
+.btn-uiverse-arrow {
+  --primary-color: #DD5204;
+  --secondary-color: #fff;
+  --hover-color: #645bff;
+  --arrow-width: 10px;
+  --arrow-stroke: 2px;
+  box-sizing: border-box;
+  border: 0;
+  border-radius: 9999px;
+  color: var(--secondary-color);
+  padding: 0.65em 1.4em;
+  background: var(--primary-color);
+  display: inline-flex;
+  transition: 0.25s background-color ease, 0.25s transform ease, 0.25s box-shadow ease;
+  align-items: center;
+  gap: 0.6em;
+  font-weight: 700;
+  text-decoration: none;
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgba(221, 82, 4, 0.35);
+}
+
+.btn-uiverse-arrow .arrow-wrapper {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.btn-uiverse-arrow .arrow {
+  margin-top: 1px;
+  width: var(--arrow-width);
+  background: var(--primary-color);
+  height: var(--arrow-stroke);
+  position: relative;
+  transition: 0.2s ease;
+}
+
+.btn-uiverse-arrow .arrow::before {
+  content: "";
+  box-sizing: border-box;
+  position: absolute;
+  border: solid var(--secondary-color);
+  border-width: 0 var(--arrow-stroke) var(--arrow-stroke) 0;
+  display: inline-block;
+  top: -3px;
+  right: 3px;
+  transition: 0.2s ease;
+  padding: 3px;
+  transform: rotate(-45deg);
+}
+
+.btn-uiverse-arrow:hover {
+  background-color: var(--hover-color);
+  box-shadow: 0 6px 20px rgba(100, 91, 255, 0.45);
+}
+
+.btn-uiverse-arrow:hover .arrow {
+  background: var(--secondary-color);
+}
+
+.btn-uiverse-arrow:hover .arrow::before {
+  right: 0;
+}

@@ -60,9 +60,13 @@ export function HeroContent() {
         <div className="mt-3">
           <Link
             href="/college-predictor"
-            className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-orange-500 to-orange-600 px-5 py-2.5 text-sm font-bold text-white shadow-lg shadow-orange-500/30 transition hover:brightness-110"
+            className="btn-uiverse-arrow text-sm font-bold"
           >
-            <Sparkles className="h-4 w-4" /> AI College Predictor
+            <Sparkles className="h-4 w-4" />
+            <span>AI College Predictor</span>
+            <div className="arrow-wrapper">
+              <div className="arrow" />
+            </div>
           </Link>
         </div>
         {/* Popular searches chips below search bar */}
