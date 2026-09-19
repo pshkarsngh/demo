@@ -61,6 +61,12 @@ interface AnswerState {
   marked: boolean;
 }
 
+function isWholeScreen(stream: MediaStream): boolean {
+  const settings = (stream.getVideoTracks()[0]?.getSettings() ?? {}) as { displaySurface?: string };
+  // Undefined surface (e.g. Firefox/Safari) means the browser can't verify → accept.
+  return !settings.displaySurface || settings.displaySurface === "monitor";
+}
+
 interface BuildResult {
   correct: number;
   incorrect: number;
@@ -94,11 +100,14 @@ export function ProctoredMockTest({ test }: { test: MockTest }) {
   const [violations, setViolations] = useState<Violation[]>([]);
   const [warnOpen, setWarnOpen] = useState(false);
   const [lastWarning, setLastWarning] = useState<Violation | null>(null);
+  const [screenError, setScreenError] = useState<string | null>(null);
 
   const cameraStreamRef = useRef<MediaStream | null>(null);
   const screenStreamRef = useRef<MediaStream | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const screenSurfaceIssueRef = useRef(false);
+  const fullscreenIssueRef = useRef(false);
 
   const stageRef = useRef<Stage>("setup");
   const timeLeftRef = useRef(0);
@@ -198,7 +207,15 @@ export function ProctoredMockTest({ test }: { test: MockTest }) {
     const scrPromise = navigator.mediaDevices
       .getDisplayMedia({ video: true })
       .then((stream) => {
+        if (!isWholeScreen(stream)) {
+          stream.getTracks().forEach((t) => t.stop());
+          setScreenError("You must share your ENTIRE screen, not just one window or browser tab. Please pick ‘Entire screen / Full screen’ and try again.");
+          setPerms((p) => ({ ...p, screen: "denied" }));
+          return;
+        }
         screenStreamRef.current = stream;
+        screenSurfaceIssueRef.current = false;
+        setScreenError(null);
         setPerms((p) => ({ ...p, screen: "granted" }));
         stream.getVideoTracks()[0].onended = () => {
           stopScreenSharingEvent();
@@ -216,6 +233,18 @@ export function ProctoredMockTest({ test }: { test: MockTest }) {
   useEffect(() => {
     if (stage !== "running") return;
     timerRef.current = setInterval(() => {
+      const screen = screenStreamRef.current;
+      if (screen) {
+        const surface = (screen.getVideoTracks()[0]?.getSettings() ?? {}) as { displaySurface?: string };
+        if (surface.displaySurface && surface.displaySurface !== "monitor" && !screenSurfaceIssueRef.current) {
+          screenSurfaceIssueRef.current = true;
+          registerViolation("Screen share no longer covers the entire screen");
+        }
+      }
+      if (!document.fullscreenElement && !fullscreenIssueRef.current) {
+        fullscreenIssueRef.current = true;
+        registerViolation("You exited full-screen mode");
+      }
       setTimeLeft((prev) => {
         const n = prev - 1;
         if (n <= 0) {
@@ -229,7 +258,7 @@ export function ProctoredMockTest({ test }: { test: MockTest }) {
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
     };
-  }, [stage]);
+  }, [stage, registerViolation]);
 
   // ---------- Proctoring event listeners + cleanup ----------
   useEffect(() => {
@@ -242,23 +271,16 @@ export function ProctoredMockTest({ test }: { test: MockTest }) {
       registerViolation("You switched to another window or application");
       window.focus();
     };
-    const onFullscreenChange = () => {
-      if (stageRef.current === "running" && !document.fullscreenElement) {
-        registerViolation("You exited full-screen mode");
-      }
-    };
     const onContextMenu = (e: MouseEvent) => e.preventDefault();
     const onCopy = (e: ClipboardEvent) => e.preventDefault();
 
     document.addEventListener("visibilitychange", onVisibility);
     window.addEventListener("blur", onBlur);
-    document.addEventListener("fullscreenchange", onFullscreenChange);
     document.addEventListener("contextmenu", onContextMenu);
     document.addEventListener("copy", onCopy);
     return () => {
       document.removeEventListener("visibilitychange", onVisibility);
       window.removeEventListener("blur", onBlur);
-      document.removeEventListener("fullscreenchange", onFullscreenChange);
       document.removeEventListener("contextmenu", onContextMenu);
       document.removeEventListener("copy", onCopy);
     };
@@ -346,6 +368,8 @@ export function ProctoredMockTest({ test }: { test: MockTest }) {
     setShowSolutions(false);
     setViolations([]);
     setWarnOpen(false);
+    fullscreenIssueRef.current = false;
+    screenSurfaceIssueRef.current = false;
     if (!document.fullscreenElement) {
       try {
         const p = document.documentElement.requestFullscreen?.();
@@ -382,7 +406,15 @@ export function ProctoredMockTest({ test }: { test: MockTest }) {
       navigator.mediaDevices
         .getDisplayMedia({ video: true })
         .then((stream) => {
+          if (!isWholeScreen(stream)) {
+            stream.getTracks().forEach((t) => t.stop());
+            setScreenError("You must share your ENTIRE screen, not just one window or browser tab. Please pick ‘Entire screen / Full screen’ and try again.");
+            setPerms((p) => ({ ...p, screen: "denied" }));
+            return;
+          }
           screenStreamRef.current = stream;
+          screenSurfaceIssueRef.current = false;
+          setScreenError(null);
           setPerms((p) => ({ ...p, screen: "granted" }));
           stream.getVideoTracks()[0].onended = () => {
             stopScreenSharingEvent();
@@ -454,7 +486,7 @@ export function ProctoredMockTest({ test }: { test: MockTest }) {
                 [
                   { key: "camera", icon: <Eye className="h-4 w-4" />, label: "Camera access" },
                   { key: "mic", icon: <Mic className="h-4 w-4" />, label: "Microphone access" },
-                  { key: "screen", icon: <MonitorUp className="h-4 w-4" />, label: "Screen sharing" },
+                  { key: "screen", icon: <MonitorUp className="h-4 w-4" />, label: "Share entire screen" },
                   { key: "fullscreen", icon: <Maximize2 className="h-4 w-4" />, label: "Full-screen mode" },
                 ] as { key: keyof PermissionStatus; icon: React.ReactNode; label: string }[]
               ).map(({ key, icon, label }) => {
@@ -479,6 +511,13 @@ export function ProctoredMockTest({ test }: { test: MockTest }) {
                 );
               })}
             </ul>
+
+            {screenError && (
+              <div className="mt-3 flex items-start gap-2 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-xs text-red-300">
+                <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0" />
+                <span>{screenError}</span>
+              </div>
+            )}
 
             <div className="mt-6 rounded-2xl border border-white/10 bg-white/5 p-4">
               <h3 className="flex items-center gap-2 text-sm font-bold text-white">
@@ -531,6 +570,10 @@ export function ProctoredMockTest({ test }: { test: MockTest }) {
                   <li className="flex items-start gap-2">
                     <XCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
                     Avoid a dark room or a bright light behind you, and do not let anyone else enter the frame.
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <MonitorUp className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                    When asked to share your screen, choose <b className="text-white">“Entire screen”</b> — a single window or tab is not allowed.
                   </li>
                 </ul>
               </div>
