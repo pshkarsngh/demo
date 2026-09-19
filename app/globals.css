@@ -57,6 +57,82 @@
   --brand-ink: #14121f;
 }
 
+html.dark {
+  --background: #090d16;
+  --foreground: #f3f4f6;
+  --card: #111827;
+  --muted: #9ca3af;
+  --border: #1f2937;
+  --ring: rgba(167, 139, 250, 0.5);
+
+  --brand-purple-soft: #1e1b4b;
+  --brand-blue-soft: #172554;
+  --brand-yellow-soft: #422006;
+  --brand-orange-soft: #431407;
+  --brand-amber-soft: #451a03;
+  --brand-ink: #f9fafb;
+}
+
+/* Dark mode surface & component overrides */
+html.dark body {
+  background: var(--background);
+  color: var(--foreground);
+}
+
+html.dark .bg-white {
+  background-color: #111827 !important;
+  color: #f3f4f6;
+}
+
+html.dark .bg-gray-50 {
+  background-color: #0f172a !important;
+}
+
+html.dark .bg-gray-100 {
+  background-color: #1e293b !important;
+}
+
+html.dark .text-gray-900,
+html.dark .text-purple-950,
+html.dark .text-slate-900 {
+  color: #f3f4f6 !important;
+}
+
+html.dark .text-gray-600,
+html.dark .text-gray-500,
+html.dark .text-slate-600 {
+  color: #9ca3af !important;
+}
+
+html.dark .text-gray-700 {
+  color: #d1d5db !important;
+}
+
+html.dark .border-gray-100,
+html.dark .border-gray-200,
+html.dark .border-purple-100,
+html.dark .ring-purple-100\/70,
+html.dark .ring-purple-100\/60 {
+  border-color: #1f2937 !important;
+}
+
+html.dark .glass {
+  background: rgba(17, 24, 39, 0.85);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+html.dark .glass-nav {
+  background: rgba(15, 23, 42, 0.85);
+  border-bottom-color: rgba(255, 255, 255, 0.1);
+  box-shadow: 0 12px 32px -18px rgba(0, 0, 0, 0.7);
+}
+
+html.dark input,
+html.dark select,
+html.dark textarea {
+  color: #f3f4f6;
+}
+
 * {
   border-color: var(--border);
 }

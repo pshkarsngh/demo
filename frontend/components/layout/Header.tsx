@@ -27,6 +27,7 @@ import {
 import { cn } from "@/lib/utils";
 import { ButtonLink } from "@/components/ui/Button";
 import { usePathname } from "next/navigation";
+import { ThemeToggle } from "@/components/layout/ThemeToggle";
 
 const PRIMARY_NAV = [
   { label: "Colleges", href: "/colleges", icon: Building2 },
@@ -190,6 +191,7 @@ export function Header() {
         </nav>
 
         <div className="hidden items-center gap-2.5 lg:flex">
+          <ThemeToggle />
           <Link
             href="/colleges"
             aria-label="Search colleges"
@@ -272,6 +274,10 @@ export function Header() {
                 );
               })}
               <div className="mt-2 grid grid-cols-1 gap-2 border-t border-gray-100 pt-3">
+                <div className="flex items-center justify-between px-2 py-1">
+                  <span className="text-xs font-bold uppercase tracking-wider text-gray-500">Theme</span>
+                  <ThemeToggle showLabel />
+                </div>
                 <ButtonLink href="/admission" variant="accent" size="md" onClick={() => setOpen(false)}>
                   <HelpCircle className="h-4 w-4" />
                   Get Admission Help

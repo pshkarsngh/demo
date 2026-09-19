@@ -43,6 +43,8 @@ interface AppContextValue {
   testHistory: MockTestResult[];
   notifications: NotificationItem[];
   reviews: Review[];
+  darkMode: boolean;
+  toggleDarkMode: () => void;
 
   isSaved: (id: string) => boolean;
   toggleSave: (id: string, name?: string) => void;
@@ -112,6 +114,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [testHistory, setTestHistory] = useState<MockTestResult[]>([]);
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [reviews, setReviews] = useState<Review[]>([]);
+  const [darkMode, setDarkMode] = useState<boolean>(false);
   const [prefs, setPrefsState] = useState<NotificationPrefs>({
     admissionDeadlines: true,
     scholarshipAlerts: true,
@@ -138,7 +141,33 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setTestHistory(load("cp_test_history", []));
     setNotifications(load("cp_notifications", []));
     setReviews(load("cp_reviews", []));
+
+    const savedTheme = typeof window !== "undefined" ? localStorage.getItem("cp_theme") : null;
+    const isDark = savedTheme
+      ? savedTheme === "dark"
+      : typeof window !== "undefined" && window.matchMedia("(prefers-color-scheme: dark)").matches;
+    setDarkMode(isDark);
+    if (isDark) {
+      document.documentElement.classList.add("dark");
+    } else {
+      document.documentElement.classList.remove("dark");
+    }
+
     hydrated.current = true;
+  }, []);
+
+  const toggleDarkMode = useCallback(() => {
+    setDarkMode((prev) => {
+      const next = !prev;
+      if (next) {
+        document.documentElement.classList.add("dark");
+        localStorage.setItem("cp_theme", "dark");
+      } else {
+        document.documentElement.classList.remove("dark");
+        localStorage.setItem("cp_theme", "light");
+      }
+      return next;
+    });
   }, []);
 
   useEffect(() => {
@@ -382,6 +411,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       testHistory,
       notifications,
       reviews,
+      darkMode,
+      toggleDarkMode,
       isSaved: (id) => savedColleges.includes(id),
       toggleSave,
       isCourseSaved: (slug) => savedCourses.includes(slug),
@@ -422,6 +453,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       testHistory,
       notifications,
       reviews,
+      darkMode,
+      toggleDarkMode,
       toggleSave,
       toggleCourseSave,
       toggleScholarshipSave,
