@@ -17,7 +17,6 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { cn } from "@/lib/utils";
-import { resolveMarks } from "@/lib/data/mockTests";
 import type { MockTest } from "@/lib/types";
 import { MAX_VIOLATIONS, type PermissionStatus, type PermState } from "@/components/mocktests/types";
 
@@ -88,16 +87,28 @@ export function TestSetupScreen({
   test,
   perms,
   screenError,
+  startError = null,
+  starting = false,
   onRequestSetup,
   onBegin,
 }: {
-  test: MockTest;
+test: MockTest;
   perms: PermissionStatus;
   screenError: string | null;
-  onRequestSetup: () => void;
-  onBegin: () => void;
+  /**
+   * Why the attempt could not be opened, from the server.
+   *
+   * Rendered here rather than swallowed: a 400 from `start` is a refusal with a
+   * sentence attached ("no questions available yet", "attempt limit reached"), and
+   * the student is the only one who can act on it. An attempt that never opens
+   * silently is indistinguishable from a broken button.
+   */
+  startError?: string | null;
+  /** True while `start` is in flight, so the button cannot be double-pressed. */
+  starting?: boolean;
+  onRequestSetup: () => void | Promise<void>;
+  onBegin: () => void | Promise<void>;
 }) {
-  const marks = resolveMarks(test);
   const on = PERMISSION_ROWS.filter((r) => perms[r.key] === "granted");
   const focusModeOn = on.length > 0;
 
@@ -120,20 +131,27 @@ export function TestSetupScreen({
           </div>
 
           <p className="mt-5 text-sm leading-relaxed text-slate-300">
-            The timer starts the moment you begin and does not stop. You can move between questions
-            freely, flag anything for review, and change an answer until you submit. Unanswered
-            questions are scored as unattempted.
+            The timer starts the moment you begin and does not stop, and it keeps running if you
+            switch away. You can move between questions freely, flag anything for review, and change
+            an answer until you submit. Answers are saved as you go, and anything left blank is
+            scored as unattempted.
           </p>
 
-          <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
+          {/*
+            * No "Total marks" or "Marking" tile here, and deliberately so. Both used
+            * to be computed as `questionCount * resolveMarks(test).correct` and shown
+            * as fact before the paper was opened. Grading is now the server's and it
+            * is per question -- each question carries its own `marks`, and negative
+            * marking is a per-paper flag -- so a number derived from the local
+            * catalogue is a guess about a paper the client has not fetched yet. A
+            * guess stated as a total is worse than no total: the exact figure appears
+            * on the results screen, computed by the same engine that graded the
+            * attempt.
+            */}
+          <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-2">
             {[
               { label: "Questions", value: String(test.questionCount) },
               { label: "Duration", value: `${test.durationMins} mins` },
-              { label: "Total marks", value: String(test.questionCount * marks.correct) },
-              {
-                label: "Marking",
-                value: `+${marks.correct} / −${marks.wrong}`,
-              },
             ].map((s) => (
               <div
                 key={s.label}
@@ -146,8 +164,8 @@ export function TestSetupScreen({
           </div>
 
           <p className="mt-2 text-xs leading-relaxed text-slate-500">
-            Marking is +{marks.correct} per correct answer, −{marks.wrong} per incorrect answer, and
-            0 for anything left unattempted.
+            Marks are set per question, and your exact score and the marking applied are shown on
+            the results screen.
           </p>
 
           <div className="mt-7 rounded-2xl border border-white/10 bg-white/[0.03] p-5">
@@ -217,13 +235,25 @@ export function TestSetupScreen({
             </p>
           )}
 
+          {/* A refusal from `start`, not a warning. Red, and it says what the
+              student can do: wait for review, or stop retrying an attempt limit. */}
+          {startError && (
+            <p className="mt-4 flex items-start gap-2 rounded-xl border border-red-500/40 bg-red-500/10 p-3 text-xs leading-relaxed text-red-200">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+              <span>{startError}</span>
+            </p>
+          )}
+
           <div className="mt-7 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <Button variant="ghost" size="lg" onClick={onRequestSetup}>
+            <Button variant="ghost" size="lg" onClick={onRequestSetup} disabled={starting}>
               <ShieldCheck className="h-4 w-4" />
               {focusModeOn ? "Re-check focus mode" : "Turn on focus mode"}
             </Button>
-            <Button variant="warm" size="lg" onClick={onBegin}>
-              Begin test <Play className="h-4 w-4" />
+            {/* Disabled while starting, because `start` is not idempotent from the
+                student's side: a second press could arrive after the first attempt
+                was inserted and spend another attempt. */}
+            <Button variant="warm" size="lg" onClick={onBegin} disabled={starting}>
+              {starting ? "Opening attempt…" : "Begin test"} <Play className="h-4 w-4" />
             </Button>
           </div>
 

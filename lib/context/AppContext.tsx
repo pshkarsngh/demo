@@ -11,6 +11,30 @@ import {
   type ReactNode,
 } from "react";
 import type { AdmissionEnquiry, MockTestResult, NotificationItem, Review, StudentProfile } from "@/lib/types";
+import {
+  authApi,
+  broadcastSignOut,
+  clearAuth,
+  fetchMyRoles,
+  getAccessToken,
+  hasAdminRole,
+  notificationsApi,
+  purgeLegacyTokenStorage,
+  refreshAccessToken,
+  subscribeToAccessToken,
+} from "@/lib/api";
+import {
+  fetchSavedColleges,
+  saveCollegeRemote,
+  unsaveCollegeRemote,
+  type SavedCollegeRecord,
+} from "@/lib/api";
+import {
+  apiNotificationId,
+  isApiNotification,
+  localNotifications,
+  mergeApiNotifications,
+} from "@/lib/notification-inbox";
 
 export interface ToastItem {
   id: number;
@@ -46,8 +70,23 @@ interface AppContextValue {
   darkMode: boolean;
   toggleDarkMode: () => void;
 
+  isAuthenticated: boolean;
+  authReady: boolean;
+  roles: string[];
+  rolesReady: boolean;
+  isAdmin: boolean;
+  refreshRoles: () => Promise<void>;
+  setAuthenticated: (v: boolean) => void;
+  logout: () => void;
+
   isSaved: (id: string) => boolean;
   toggleSave: (id: string, name?: string) => void;
+
+  /** Real saved-college records from the backend, plus how the load went. */
+  savedCollegeRecords: SavedCollegeRecord[];
+  savedSync: "idle" | "loading" | "synced" | "no-profile" | "error";
+  savedSyncMessage: string | null;
+  refreshSavedColleges: () => Promise<void>;
 
   isCourseSaved: (slug: string) => boolean;
   toggleCourseSave: (slug: string, name?: string) => void;
@@ -64,6 +103,8 @@ interface AppContextValue {
   addRecentView: (id: string) => void;
   addRecentSearch: (query: string) => void;
   addRecentLocation: (loc: string) => void;
+  clearRecentSearches: () => void;
+  clearRecentLocations: () => void;
 
   setPrefs: (p: Partial<NotificationPrefs>) => void;
 
@@ -102,6 +143,11 @@ function save(key: string, value: unknown) {
 
 export function AppProvider({ children }: { children: ReactNode }) {
   const [savedColleges, setSavedColleges] = useState<string[]>([]);
+  const [savedCollegeRecords, setSavedCollegeRecords] = useState<SavedCollegeRecord[]>([]);
+  const [savedSync, setSavedSync] = useState<
+    "idle" | "loading" | "synced" | "no-profile" | "error"
+  >("idle");
+  const [savedSyncMessage, setSavedSyncMessage] = useState<string | null>(null);
   const [savedCourses, setSavedCourses] = useState<string[]>([]);
   const [savedScholarships, setSavedScholarships] = useState<string[]>([]);
   const [compareList, setCompareList] = useState<string[]>([]);
@@ -115,6 +161,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [reviews, setReviews] = useState<Review[]>([]);
   const [darkMode, setDarkMode] = useState<boolean>(false);
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
+  const [authReady, setAuthReady] = useState<boolean>(false);
+  const [roles, setRoles] = useState<string[]>([]);
+  const [rolesReady, setRolesReady] = useState<boolean>(false);
   const [prefs, setPrefsState] = useState<NotificationPrefs>({
     admissionDeadlines: true,
     scholarshipAlerts: true,
@@ -125,7 +175,37 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<ToastItem[]>([]);
   const hydrated = useRef(false);
 
+  const isAdmin = useMemo(() => hasAdminRole(roles), [roles]);
+
+  const refreshRoles = useCallback(async () => {
+    if (typeof window === "undefined") return;
+    // Phase 3.6: the access token is in memory, not in storage, so presence is
+    // now an in-process question. Reading `localStorage` here is what would have
+    // reintroduced the very coupling this change removes.
+    if (!getAccessToken()) {
+      setRoles([]);
+      setRolesReady(true);
+      return;
+    }
+    // Mark the lookup as *in flight*. Without this the flag keeps whatever value
+    // the previous session left behind — and on the sign-in path that value is
+    // `true` with an empty role list, because the boot exchange found no token
+    // and ran the branch above. `RequireAdmin` reads `rolesReady && !isAdmin` as
+    // "this person is not an admin" and ships the freshly signed-in admin to
+    // /dashboard before this request has answered. The fetch below is the only
+    // thing that can make that decision correctly, so the guard has to wait for
+    // it rather than race it.
+    setRolesReady(false);
+    setRoles(await fetchMyRoles());
+    setRolesReady(true);
+  }, []);
+
   useEffect(() => {
+    // Phase 3.6: remove the tokens earlier builds left in local storage. For
+    // anyone who signed in before this change this is the step that actually
+    // deletes the readable copy, rather than merely ceasing to write a new one.
+    purgeLegacyTokenStorage();
+
     // Hydrate persisted state from localStorage on first mount only.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setSavedColleges(load("cp_saved", []));
@@ -154,7 +234,98 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
 
     hydrated.current = true;
-  }, []);
+
+    // Phase 3.6: the session is no longer something that can be read back out of
+    // storage, so "am I signed in?" is a question for the server. The HttpOnly
+    // refresh cookie is the durable half of the session and survives the reload;
+    // this exchanges it for an access token held in memory.
+    //
+    // `authReady` is set in both branches, and only after the exchange resolves,
+    // so a consumer gating on it never sees a signed-out flash. It is
+    // deliberately *not* set before the await: setting it early would let
+    // RequireAuth redirect a signed-in user to /login for the duration of one
+    // same-origin request.
+    void (async () => {
+      const token = await refreshAccessToken();
+      if (token) {
+        setIsAuthenticated(true);
+        await refreshRoles();
+      } else {
+        setIsAuthenticated(false);
+        setRoles([]);
+        setRolesReady(true);
+      }
+      setAuthReady(true);
+    })();
+  }, [refreshRoles]);
+
+  // A sibling tab signing in, signing out, or having its token rotated should be
+  // reflected here without a reload. Without this, signing out on one tab left
+  // the others showing a signed-in UI whose every request 401'd.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    return subscribeToAccessToken((token) => {
+      if (token) {
+        setIsAuthenticated(true);
+        void refreshRoles();
+      } else if (hydrated.current) {
+        setIsAuthenticated(false);
+        setRoles([]);
+        setRolesReady(true);
+        // Another tab signed out. Drop the fetched inbox: those rows belong to
+        // the session that just ended, and the next sign-in is a different
+        // person on a shared browser.
+        setNotifications((prev) => prev.filter((n) => !isApiNotification(n)));
+      }
+    });
+  }, [refreshRoles]);
+
+  /**
+   * The inbox is server state.
+   *
+   * `cp_notifications` only ever held rows a browser wrote to itself, so a
+   * broadcast from the admin console — which writes one row per student in
+   * `notifications` — never appeared on this page. Fetching `/notifications/my`
+   * is what makes the other end of that console exist.
+   *
+   * Refreshed on three triggers: when the session becomes available (boot
+   * exchange or sign-in), when the tab regains focus, and once a minute while it
+   * is open. The header bell reads this same list, so without the two live
+   * triggers a message sent while the student was reading would not appear until
+   * a full reload.
+   *
+   * The `ignore` flag drops a response that lands after sign-out, which would
+   * otherwise put one user's messages on the next user's page.
+   *
+   * A failure keeps the local rows rather than clearing the list. An inbox that
+   * is empty because the network dropped is indistinguishable from "you have no
+   * updates", and the second one is a much worse thing to show someone.
+   */
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    let ignore = false;
+
+    const pull = () => {
+      void notificationsApi
+        .my()
+        .then((rows) => {
+          if (ignore) return;
+          setNotifications((prev) => mergeApiNotifications(prev, rows));
+        })
+        .catch(() => undefined);
+    };
+
+    pull();
+    const onFocus = () => pull();
+    const timer = window.setInterval(pull, 60_000);
+    window.addEventListener("focus", onFocus);
+
+    return () => {
+      ignore = true;
+      window.clearInterval(timer);
+      window.removeEventListener("focus", onFocus);
+    };
+  }, [isAuthenticated]);
 
   const toggleDarkMode = useCallback(() => {
     setDarkMode((prev) => {
@@ -216,7 +387,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [testHistory]);
   useEffect(() => {
     if (!hydrated.current) return;
-    save("cp_notifications", notifications);
+    save("cp_notifications", localNotifications(notifications));
   }, [notifications]);
   useEffect(() => {
     if (!hydrated.current) return;
@@ -257,6 +428,88 @@ export function AppProvider({ children }: { children: ReactNode }) {
       });
     },
     [showToast],
+  );
+
+  /**
+   * Pull the signed-in user's saved colleges from the backend.
+   *
+   * The dashboard used to show a hardcoded shortlist, then a localStorage list, so
+   * what it displayed was never the user's real data. The server list is now
+   * authoritative: on success it replaces the local IDs, which means a save made
+   * on another device shows up here. A failure is surfaced rather than silently
+   * leaving the previous list on screen as if it were current.
+   */
+  const refreshSavedColleges = useCallback(async () => {
+    if (!getAccessToken()) {
+      setSavedSync("idle");
+      return;
+    }
+
+    setSavedSync("loading");
+    const result = await fetchSavedColleges();
+
+    if (result.state === "ok") {
+      setSavedCollegeRecords(result.records);
+      setSavedColleges(result.records.map((r) => String(r.college_id)));
+      setSavedSync("synced");
+      setSavedSyncMessage(null);
+      return;
+    }
+
+    if (result.state === "no-profile") {
+      // Nothing is wrong, there is simply nowhere to attach saves yet.
+      setSavedSync("no-profile");
+      setSavedSyncMessage("Complete your student profile to save colleges across devices.");
+      return;
+    }
+
+    setSavedSync("error");
+    setSavedSyncMessage(result.message);
+  }, []);
+
+  // Re-sync whenever the signed-in user changes, and once the token is readable.
+  // The call is deferred by a microtask because `refreshSavedColleges` sets the
+  // "loading" state before its first await; running that inside the synchronous
+  // effect body would cascade a render on every auth change.
+  useEffect(() => {
+    if (!authReady) return;
+    void Promise.resolve().then(() => refreshSavedColleges());
+  }, [authReady, isAuthenticated, refreshSavedColleges]);
+
+  /**
+   * Optimistic save/unsave that also writes through to the backend.
+   *
+   * The local list updates immediately so the UI stays responsive; if the server
+   * rejects the write the change is rolled back and the reason is surfaced rather
+   * than leaving a save that only exists in this browser.
+   */
+  const toggleSaveSynced = useCallback(
+    (id: string, name?: string) => {
+      const wasSaved = savedColleges.includes(id);
+      const numericId = Number(id);
+
+      toggleSave(id, name);
+
+      if (!getAccessToken() || !Number.isFinite(numericId)) return;
+
+      const call = wasSaved ? unsaveCollegeRemote(numericId) : saveCollegeRemote(numericId);
+      void call
+        .then(() => refreshSavedColleges())
+        .catch((err: unknown) => {
+          // Roll the optimistic change back.
+          setSavedColleges((prev) =>
+            wasSaved ? [id, ...prev] : prev.filter((x) => x !== id),
+          );
+          showToast({
+            variant: "error",
+            title: "Could not update your saved colleges",
+            description:
+              (err instanceof Error ? err.message : undefined) ??
+              (wasSaved ? "The college was not removed." : "The college was not saved."),
+          });
+        });
+    },
+    [savedColleges, toggleSave, refreshSavedColleges, showToast],
   );
 
   const toggleCourseSave = useCallback(
@@ -332,6 +585,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setRecentLocations((prev) => [loc, ...prev.filter((x) => x !== loc)].slice(0, 6));
   }, []);
 
+  const clearRecentSearches = useCallback(() => {
+    setRecentSearches([]);
+    showToast({ variant: "info", title: "Search history cleared", description: "Your recent searches are now empty." });
+  }, [showToast]);
+
+  const clearRecentLocations = useCallback(() => {
+    setRecentLocations([]);
+    showToast({ variant: "info", title: "Location history cleared", description: "Your recent locations are now empty." });
+  }, [showToast]);
+
   const setPrefs = useCallback((p: Partial<NotificationPrefs>) => {
     setPrefsState((prev) => ({ ...prev, ...p }));
   }, []);
@@ -380,10 +643,22 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const markNotificationRead = useCallback((id: string) => {
     setNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, read: true } : n)));
+    // The flip above is optimistic: the badge clears immediately, and a failed
+    // write only means the row comes back unread on the next fetch. That is
+    // preferable to a click that appears to do nothing while the request is in
+    // flight, which is what a server round-trip before the state change looks
+    // like on a slow connection.
+    const serverId = apiNotificationId(id);
+    if (serverId !== null) {
+      void notificationsApi.markRead(serverId).catch(() => undefined);
+    }
   }, []);
 
   const markAllNotificationsRead = useCallback(() => {
     setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
+    // Marks the caller's rows only; the endpoint is scoped to the access token,
+    // so this cannot touch anybody else's inbox.
+    void notificationsApi.markAllRead().catch(() => undefined);
   }, []);
 
   const addReview = useCallback(
@@ -393,6 +668,43 @@ export function AppProvider({ children }: { children: ReactNode }) {
     },
     [showToast],
   );
+
+  const setAuthenticated = useCallback(
+    (v: boolean) => {
+      setIsAuthenticated(v);
+      if (v) {
+        void refreshRoles();
+      } else {
+        setRoles([]);
+        setRolesReady(true);
+        setNotifications((prev) => prev.filter((n) => !isApiNotification(n)));
+      }
+    },
+    [refreshRoles],
+  );
+
+  const logout = useCallback(() => {
+    // Revoke the server-side session (HttpOnly refresh cookie) before wiping
+    // local credentials. Best-effort: a network failure must not block sign-out.
+    void authApi.logout().catch(() => undefined);
+    clearAuth();
+    // Tell the other tabs. The refresh family is revoked server-side, so their
+    // in-memory access tokens are already dead — this stops them rendering a
+    // signed-in UI whose every request 401s until the user notices.
+    broadcastSignOut();
+    setIsAuthenticated(false);
+    setRoles([]);
+    setRolesReady(true);
+    setProfileState(null);
+    // Same reason as the cross-tab branch: the fetched inbox is the ending
+    // session's, not this browser's.
+    setNotifications((prev) => prev.filter((n) => !isApiNotification(n)));
+    showToast({
+      variant: "info",
+      title: "Signed out",
+      description: "You have been logged out of your account.",
+    });
+  }, [showToast]);
 
   const value = useMemo<AppContextValue>(
     () => ({
@@ -413,8 +725,21 @@ export function AppProvider({ children }: { children: ReactNode }) {
       reviews,
       darkMode,
       toggleDarkMode,
+      isAuthenticated,
+      authReady,
+      roles,
+      rolesReady,
+      isAdmin,
+      refreshRoles,
+      setAuthenticated,
+      logout,
       isSaved: (id) => savedColleges.includes(id),
-      toggleSave,
+      // Writes through to the backend when signed in; the local list is a cache.
+      toggleSave: toggleSaveSynced,
+      savedCollegeRecords,
+      savedSync,
+      savedSyncMessage,
+      refreshSavedColleges,
       isCourseSaved: (slug) => savedCourses.includes(slug),
       toggleCourseSave,
       isScholarshipSaved: (id) => savedScholarships.includes(id),
@@ -427,6 +752,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       addRecentView,
       addRecentSearch,
       addRecentLocation,
+      clearRecentSearches,
+      clearRecentLocations,
       setPrefs,
       setProfile,
       addEnquiry,
@@ -439,6 +766,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }),
     [
       savedColleges,
+      savedCollegeRecords,
+      savedSync,
+      savedSyncMessage,
+      refreshSavedColleges,
       savedCourses,
       savedScholarships,
       compareList,
@@ -455,7 +786,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
       reviews,
       darkMode,
       toggleDarkMode,
-      toggleSave,
+      isAuthenticated,
+      authReady,
+      roles,
+      rolesReady,
+      isAdmin,
+      refreshRoles,
+      setAuthenticated,
+      logout,
+      toggleSaveSynced,
       toggleCourseSave,
       toggleScholarshipSave,
       toggleCompare,
@@ -464,6 +803,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       addRecentView,
       addRecentSearch,
       addRecentLocation,
+      clearRecentSearches,
+      clearRecentLocations,
       setPrefs,
       setProfile,
       addEnquiry,

@@ -3,27 +3,65 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { Search, Bookmark, Clock, IndianRupee, Building2, ArrowRight } from "lucide-react";
-import { searchCourses, collegesOffering } from "@/lib/data/courses";
+import { searchCourses, collegesOffering, COURSES, type CourseMeta } from "@/lib/data/courses";
+import { COLLEGES } from "@/lib/data/colleges";
 import { useApp } from "@/lib/context/AppContext";
+import type { College } from "@/lib/types";
 import { cn, formatINR } from "@/lib/utils";
 import { Badge } from "@/components/ui/Badge";
 import { Chip } from "@/components/ui/Chip";
 import { EmptyState } from "@/components/ui/EmptyState";
 
-const LEVELS = ["All", "UG", "PG", "Doctoral"] as const;
+/**
+ * Level chips.
+ *
+ * `"Diploma"` was missing while `mapCourseMeta` emits it (`COURSE_LEVELS` in
+ * `lib/mappers.ts` is `["UG","PG","Doctoral","Diploma"]`), so a Diploma course
+ * was searchable but could not be isolated — clicking through the chips gave no
+ * way to ask "show me diplomas".
+ *
+ * Derived from the catalogue rather than hard-coded, so a level added to the
+ * backend mapper cannot be left out of the UI the way this was.
+ */
+function levelsFor(catalog: CourseMeta[]): string[] {
+  // `Set<string>` explicitly: `new Set(catalog.map(c => c.level))` infers the
+  // literal union, and `has("Diploma")` from a `string[]` of candidates would not
+  // typecheck against it.
+  const present = new Set<string>(catalog.map((c) => c.level));
+  // Stable, familiar order; anything unrecognised sorts to the end rather than
+  // disappearing.
+  const preferred = ["UG", "PG", "Diploma", "Doctoral"];
+  const rest = [...present].filter((l) => !preferred.includes(l)).sort();
+  return ["All", ...preferred.filter((l) => present.has(l)), ...rest];
+}
 
-export default function CoursesExplorer() {
+export default function CoursesExplorer({
+  courses: catalogProp,
+  colleges: datasetProp,
+}: {
+  /** Course catalogue resolved on the server. */
+  courses?: CourseMeta[];
+  /** College dataset used for the "N colleges offer this" count. */
+  colleges?: College[];
+}) {
+  const catalog = useMemo(() => catalogProp?.length ? catalogProp : COURSES, [catalogProp]);
+  const dataset = useMemo(() => datasetProp?.length ? datasetProp : COLLEGES, [datasetProp]);
+
   const [query, setQuery] = useState("");
-  const [level, setLevel] = useState<(typeof LEVELS)[number]>("All");
+  const [level, setLevel] = useState<string>("All");
   const { isCourseSaved, toggleCourseSave } = useApp();
 
+  const levels = useMemo(() => levelsFor(catalog), [catalog]);
+
   const results = useMemo(() => {
-    const list = searchCourses(query);
-    return level === "All" ? list : list.filter((c) => c.level === level);
-  }, [query, level]);
+    const list = searchCourses(query, catalog);
+    return level === "All"
+      ? list
+      : list.filter((c) => (c.level as string) === level);
+  }, [query, level, catalog]);
 
   return (
-    <section className="mx-auto max-w-7xl px-4 py-10 sm:px-6 lg:px-8 lg:py-16">
+    <section className="mx-auto max-w-7xl px-4 pt-28 pb-12 sm:px-6 sm:pt-32 lg:px-8 lg:pt-36 lg:pb-16">
       <div className="max-w-2xl">
         <h1 className="font-display text-3xl font-extrabold tracking-tight text-purple-950 dark:text-white sm:text-4xl">
           Explore Courses
@@ -44,7 +82,7 @@ export default function CoursesExplorer() {
           />
         </div>
         <div className="mt-4 flex flex-wrap gap-2">
-          {LEVELS.map((l) => (
+          {levels.map((l) => (
             <Chip key={l} active={level === l} onClick={() => setLevel(l)}>
               {l}
             </Chip>
@@ -62,7 +100,7 @@ export default function CoursesExplorer() {
         ) : (
           <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
             {results.map((c) => {
-              const colleges = collegesOffering(c.slug);
+              const colleges = collegesOffering(c.slug, dataset, catalog);
               const saved = isCourseSaved(c.slug);
               return (
                 <article

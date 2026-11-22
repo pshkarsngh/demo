@@ -1,0 +1,3203 @@
+import type { StudentProfile } from "@/lib/types";
+// Type-only, so nothing in the server-side client is pulled into the browser
+// bundle. These are the single source of truth for the college shapes; the
+// read-only list type is already imported from here by `CollegesSection`.
+import type { ApiCollegeDetail, ApiCollegeListItem } from "@/lib/api-server";
+
+const rawApiUrl = process.env.NEXT_PUBLIC_API_URL;
+export const API_BASE = rawApiUrl
+  ? `${rawApiUrl.replace(/\/api\/v1\/?$/, "").replace(/\/+$/, "")}/api/v1`
+  : "/api/v1";
+
+const USER_KEY = "cp_user";
+
+/**
+ * Credentials written by builds that predate Phase 3.6.
+ *
+ * The access token lived in `localStorage` until this change, so any browser
+ * that has ever signed in still has a long-lived JWT sitting in local storage,
+ * where every npm dependency, every extension and any injected script can read
+ * it. Moving the *new* token to memory is only half the fix: without an explicit
+ * purge, the old one is still there, still valid for 30 minutes, and still
+ * exfiltratable. `purgeLegacyTokenStorage` deletes these on boot.
+ */
+const LEGACY_TOKEN_KEYS = ["cp_access_token", "cp_refresh_token"] as const;
+
+/**
+ * The access token, in memory only.
+ *
+ * ## Why not `localStorage`
+ *
+ * The OWASP Session Management Cheat Sheet is unambiguous: *"Do not store
+ * authentication tokens, session IDs, JWTs, refresh tokens, or any credential in
+ * `localStorage` or `sessionStorage`. These APIs are accessible to any
+ * JavaScript executing in the origin, so a single XSS vulnerability discloses
+ * every token."* `localStorage` is readable by first-party code, by all 373 npm
+ * packages, by every browser extension with host permissions, and by any
+ * injected script — and it survives the tab closing, so one XSS on any page
+ * yields a credential that keeps working after the tab is gone.
+ *
+ * The refresh token is already an HttpOnly cookie and is unreadable from
+ * JavaScript by construction. This is the same guarantee for the access token,
+ * as far as it can be had: JS can still *use* the token this frame holds, but
+ * cannot read it out of storage and walk away with it.
+ *
+ * ## What this costs
+ *
+ * A page load no longer restores the session from storage; it has to call
+ * `/auth/refresh` and be handed a new access token. That is one extra same-origin
+ * round trip before the app can know whether anyone is signed in, and it is the
+ * price of the property above. `authReady` in `AppContext` gates on it so the UI
+ * does not flash a signed-out state in the meantime.
+ *
+ * The trade is deliberate and worth stating plainly: this does **not** prevent
+ * XSS. An injected script can still call the API as the user while the page is
+ * open. What it removes is the durable, exfiltratable copy — the thing that
+ * turns "one bad page, one afternoon" into "a credential that works for a month".
+ */
+
+/** Rotating this on every deploy invalidates every open tab at once, so no. */
+const ACCESS_TOKEN_CHANNEL = "cp-access-token";
+/** Cross-tab mutex name. Arbitrary, but must match across tabs of one origin. */
+const REFRESH_LOCK_NAME = "cp-refresh-token-rotation";
+
+let accessToken: string | null = null;
+let accessChannel: BroadcastChannel | null = null;
+
+function ensureChannel(): BroadcastChannel | null {
+  if (typeof window === "undefined" || typeof BroadcastChannel === "undefined") return null;
+  if (!accessChannel) accessChannel = new BroadcastChannel(ACCESS_TOKEN_CHANNEL);
+  return accessChannel;
+}
+
+/**
+ * Adopt a token, and tell the other tabs about it.
+ *
+ * The broadcast is what makes cross-tab rotation safe: rotation is single-use
+ * with reuse detection and no grace window, so two tabs refreshing at the same
+ * moment would present the same refresh token, the loser would trip
+ * `RefreshReuseDetected`, and the whole family would be revoked — signing the
+ * user out of every tab through no action of their own. See `withRefreshLock`.
+ */
+function setAccessToken(next: string | null, broadcast = true): void {
+  accessToken = next;
+  if (next && broadcast) {
+    try {
+      ensureChannel()?.postMessage({ type: "access-token", token: next });
+    } catch {
+      // A closed channel must not fail a successful sign-in.
+    }
+  }
+}
+
+export function getAccessToken(): string | null {
+  return accessToken;
+}
+
+/**
+ * Delete the tokens earlier builds wrote to `localStorage`.
+ *
+ * Idempotent, and safe to call on every boot. Called from `AppContext` during
+ * hydration; the keys are already gone for a fresh visitor, and for anyone who
+ * signed in before this change this is the step that actually removes the
+ * exposure.
+ */
+export function purgeLegacyTokenStorage(): void {
+  if (typeof window === "undefined") return;
+  for (const key of LEGACY_TOKEN_KEYS) {
+    try {
+      window.localStorage.removeItem(key);
+    } catch {
+      // Private-mode Safari can throw on storage access; the token is in memory
+      // either way, so there is nothing to recover from here.
+    }
+  }
+}
+
+/** Adopt a token handed over by another tab, without persisting it. */
+export function adoptAccessToken(token: string | null): void {
+  if (token) setAccessToken(token, false);
+  else accessToken = null;
+}
+
+export class ApiError extends Error {
+  status: number;
+  /**
+   * The raw `detail` from the response body, kept as-is.
+   *
+   * Most endpoints return a plain string, but `POST /auth/login` returns a
+   * structured object when the account exists and its email is unconfirmed
+   * (`{ code: "email_not_verified", email, resend_endpoint }`). Collapsing that
+   * to a string — as the previous message-building code did — threw away the one
+   * field the login screen needs in order to offer a resend instead of asking
+   * for the password again.
+   */
+  detail?: unknown;
+
+  constructor(message: string, status = 0, detail?: unknown) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+    this.detail = detail;
+  }
+}
+
+export interface AuthTokens {
+  access_token: string;
+  // Phase 3: the refresh token no longer travels in the body — it is an
+  // HttpOnly cookie the browser carries for us (see refreshAccessToken).
+  refresh_token: string | null;
+  token_type?: string;
+}
+
+export interface LoginPayload {
+  email: string;
+  password: string;
+}
+
+export interface RegisterPayload {
+  name: string;
+  email: string;
+  mobile: string;
+  password: string;
+  /**
+   * Required by `RegisterRequest.age_band` with no default
+   * (`backend/app/schemas/auth.py`).
+   *
+   * It was added to the backend as part of Phase 9.1 and this type was not
+   * updated with it, so every signup from the UI answered 422 for as long as
+   * that lasted — a silently broken registration form that type checking,
+   * linting and a full production build were all perfectly happy with, because
+   * a missing property is not a type error when the type is the thing that is
+   * wrong.
+   *
+   * A band rather than a date of birth: s.9 turns only on whether the user is
+   * under 18, and s.5(1)(ii) requires collecting no more than necessary.
+   */
+  age_band: AgeBand;
+}
+
+export interface UserMe {
+  id: number;
+  email: string;
+  mobile: string;
+  is_active: boolean;
+  is_email_verified: boolean;
+  is_mobile_verified: boolean;
+  created_at: string;
+  last_login_at: string | null;
+}
+
+export interface UserRoles {
+  roles: string[];
+}
+
+export interface BackendProfile {
+  id: number;
+  email: string;
+  mobile: string;
+  name: string;
+  education_level: string | null;
+  course_interest: string | null;
+  preferred_state: string | null;
+  preferred_city: string | null;
+  budget_min: number | null;
+  budget_max: number | null;
+  created_at: string;
+}
+
+export interface EnquiryPayload {
+  name: string;
+  mobile: string;
+  email?: string | null;
+  course_id?: number | null;
+  college_id?: number | null;
+  state_id?: number | null;
+  city?: string | null;
+  qualification?: string | null;
+  message?: string | null;
+  source?: string | null;
+  source_url?: string | null;
+  device_type?: string | null;
+  /**
+   * Required by `EnquiryCreate.age_band`, no default
+   * (`backend/app/schemas/catalog.py`).
+   *
+   * This endpoint is unauthenticated, so the account age gate cannot reach it,
+   * and it is the widest collector of minors' personal data on the site — which
+   * is why the backend refuses it without an answer rather than defaulting to
+   * adult. `guardian_contact` is conditionally required when this is
+   * `under_18`; the form collects it only in that case.
+   */
+  age_band: AgeBand;
+  guardian_contact?: string | null;
+}
+
+export interface EnquiryResponse {
+  id: number;
+  name: string;
+  mobile: string;
+  email: string | null;
+  status: string;
+  created_at: string;
+}
+
+export interface CatalogStats {
+  /** True only when every catalogue endpoint answered. See `failed`. */
+  ok: boolean;
+  colleges: number;
+  courses: number;
+  exams: number;
+  scholarships: number;
+  blogs: number;
+  mockTests: number;
+  /** Per-source outcome, so a zero can be told apart from a source that is down. */
+  sourceStatus?: Record<string, "ok" | "error">;
+  /** Names of the sources that failed to answer. Empty when `ok` is true. */
+  failed?: string[];
+  /** Failure reason per failed source. */
+  errors?: Record<string, string>;
+  /** When these numbers were measured, as an ISO-8601 timestamp. */
+  checkedAt?: string;
+}
+
+/** Mirrors the backend `GET /health` payload. */
+export interface BackendHealth {
+  status: "ok" | "degraded" | "unreachable";
+  checks: Record<string, { ok: boolean; detail: string }>;
+  error?: string;
+  checkedAt?: string;
+}
+
+export const EMPTY_STATS: CatalogStats = {
+  ok: false,
+  colleges: 0,
+  courses: 0,
+  exams: 0,
+  scholarships: 0,
+  blogs: 0,
+  mockTests: 0,
+  failed: [],
+  sourceStatus: {},
+  errors: {},
+};
+
+export function storeAuth(tokens: AuthTokens): void {
+  if (typeof window === "undefined") return;
+  setAccessToken(tokens.access_token);
+  // A previous build may have written a refresh token here. The refresh token is
+  // an HttpOnly cookie now and is never re-read from storage, but the stale copy
+  // would otherwise sit in local storage for as long as the browser keeps it.
+  for (const key of LEGACY_TOKEN_KEYS) {
+    try {
+      window.localStorage.removeItem(key);
+    } catch {
+      /* storage unavailable; nothing persisted to clean up */
+    }
+  }
+}
+
+export function getStoredUser(): BackendProfile | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem(USER_KEY);
+    return raw ? (JSON.parse(raw) as BackendProfile) : null;
+  } catch {
+    return null;
+  }
+}
+
+export function storeUser(user: BackendProfile): void {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(USER_KEY, JSON.stringify(user));
+}
+
+export function clearAuth(): void {
+  if (typeof window === "undefined") return;
+  accessToken = null;
+  window.localStorage.removeItem(USER_KEY);
+  // Defence in depth for a rollback: if an older bundle is ever served again it
+  // will look for these keys, and it should not find a live credential.
+  for (const key of LEGACY_TOKEN_KEYS) {
+    try {
+      window.localStorage.removeItem(key);
+    } catch {
+      /* storage unavailable */
+    }
+  }
+}
+
+export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
+  return apiFetchImpl<T>(path, init, 1);
+}
+
+/**
+ * Listen for an access token rotated by another tab.
+ *
+ * Returns an unsubscribe function. Also primes the channel, which is what makes
+ * the very first cross-tab broadcast land — a channel created *after* the
+ * message was sent never sees it, so a listener that attaches lazily on 401
+ * would miss the token it is waiting for.
+ */
+export function subscribeToAccessToken(onToken: (token: string | null) => void): () => void {
+  const channel = ensureChannel();
+  if (!channel) return () => undefined;
+  const handler = (event: MessageEvent) => {
+    const data = event.data as { type?: string; token?: string } | null;
+    if (data?.type === "access-token" && typeof data.token === "string") {
+      setAccessToken(data.token, false);
+      onToken(data.token);
+    } else if (data?.type === "signed-out") {
+      accessToken = null;
+      onToken(null);
+    }
+  };
+  channel.addEventListener("message", handler);
+  return () => channel.removeEventListener("message", handler);
+}
+
+/**
+ * Drop the in-memory token and tell the other tabs to do the same.
+ *
+ * The local clear is not a convenience — it is the point. This is called on the
+ * path where `/auth/refresh` answers 401/403, meaning the session is genuinely
+ * gone, and the caller then falls through to surfacing whatever request it was
+ * repairing. Without clearing here, `getAccessToken()` keeps returning a dead
+ * token: the UI stays signed-in-looking and every subsequent request re-sends
+ * the corpse and re-401s, one repair attempt at a time.
+ *
+ * Only the in-memory token is cleared. `cp_user` and the legacy keys are left
+ * alone, because that is `clearAuth`'s job and the two are called at different
+ * points: here the user did not ask to sign out, their session simply expired,
+ * and keeping the cached profile avoids a login form that has forgotten their
+ * name.
+ */
+export function broadcastSignOut(): void {
+  accessToken = null;
+  try {
+    ensureChannel()?.postMessage({ type: "signed-out" });
+  } catch {
+    /* channel closed; the local clear above is the part that matters */
+  }
+}
+
+/**
+ * Serialise refresh across tabs, so rotation happens at most once at a time.
+ *
+ * ## Why this is not optional
+ *
+ * Refresh tokens are single-use with reuse detection and **no grace window**
+ * (`session_service.rotate` raises `RefreshReuseDetected` the moment a
+ * consumed token is presented again, and the family is revoked). Two tabs that
+ * refresh concurrently both send the *same* cookie; one wins, the other presents
+ * an already-rotated token, and the entire family is revoked. The user is signed
+ * out of every tab, on every device in that family, for doing nothing.
+ *
+ * Before this change that race was rare, because a page load restored the
+ * session from `localStorage` and refreshed only on a 401. Making the access
+ * token memory-only means *every* page load rotates, which is what makes the
+ * race routine rather than rare — so the coordination has to arrive with it.
+ *
+ * `ifAvailable: true` is deliberate. A queued lock could block indefinitely if
+ * the holding tab is frozen or backgrounded, and a page that hangs at "checking
+ * your session" is worse than one that refreshes and risks a rare re-login. If
+ * another tab holds the lock we wait briefly for its broadcast instead, and only
+ * then fall back to refreshing ourselves.
+ */
+async function withRefreshLock<T>(fn: () => Promise<T>): Promise<T> {
+  const locks = typeof navigator !== "undefined" ? navigator.locks : undefined;
+  if (!locks) return fn();
+
+  let result = await locks.request(REFRESH_LOCK_NAME, { ifAvailable: true }, async (lock) => {
+    // `lock` is null when another tab holds it.
+    return lock ? fn() : null;
+  });
+
+  if (result === null) {
+    // Someone else is mid-rotation. Give their broadcast a moment to arrive.
+    const broadcast = await waitForCrossTabToken();
+    if (broadcast) return broadcast as T;
+    // No token arrived — the other tab may have failed, been closed, or the
+    // browser may not deliver broadcasts. Refreshing is the only way to learn
+    // whether the session is still live, so do it.
+    result = await fn();
+  }
+  return result;
+}
+
+/** Resolve with a token another tab broadcasts, or `null` after `ms`. */
+function waitForCrossTabToken(ms = 1500): Promise<string | null> {
+  return new Promise((resolve) => {
+    if (typeof BroadcastChannel === "undefined") {
+      resolve(null);
+      return;
+    }
+    const channel = ensureChannel();
+    if (!channel) {
+      resolve(null);
+      return;
+    }
+    const finish = (value: string | null) => {
+      clearTimeout(timer);
+      channel.removeEventListener("message", handler);
+      resolve(value);
+    };
+    const handler = (event: MessageEvent) => {
+      const data = event.data as { type?: string; token?: string } | null;
+      if (data?.type === "access-token" && typeof data.token === "string") {
+        setAccessToken(data.token, false);
+        finish(data.token);
+      }
+    };
+    const timer = setTimeout(() => finish(null), ms);
+    channel.addEventListener("message", handler);
+  });
+}
+
+/** Single-flight refresh of the access token via the HttpOnly refresh cookie.
+ *
+ * Concurrent 401s in one tab share one in-flight request instead of hammering the
+ * backend with a refresh per caller, and `withRefreshLock` extends that across
+ * tabs. On failure every waiter gets `null` and the caller surfaces the original
+ * 401.
+ *
+ * ## `force`
+ *
+ * There are two callers with genuinely different needs, and conflating them is
+ * a bug that cost a full test cycle to find:
+ *
+ *  - **Boot** (`AppContext`): "do I have a token, from anywhere?". If a sibling
+ *    tab is already rotating, take its broadcast. Cheap, and avoids a second
+ *    rotation.
+ *  - **401 repair** (`apiFetchImpl`): the token in hand has just been
+ *    *rejected by the server*. Returning it unchanged would retry the request
+ *    with the same known-bad credential, 401 again, and hand the caller an error
+ *    while leaving a dead token in memory that every later request re-sends.
+ *
+ * So the 401 path passes `force: true` and the shortcut below is skipped. The
+ * failure mode is quiet — a user who is "signed in" and gets 401 on everything
+ * until they reload — which is exactly the class of bug BUG-01 was.
+ */
+let refreshPromise: Promise<string | null> | null = null;
+
+export async function refreshAccessToken(options: { force?: boolean } = {}): Promise<string | null> {
+  const { force = false } = options;
+  if (refreshPromise) return refreshPromise;
+  refreshPromise = (async () => {
+    try {
+      return await withRefreshLock(async (): Promise<string | null> => {
+        // Another tab may have rotated while we waited for the lock. Adopting
+        // its broadcast is free; rotating again would be a reuse. Skipped when
+        // `force` is set, because then the token we hold is the one that was
+        // just refused.
+        if (accessToken && !force) return accessToken;
+
+        const res = await fetch(`${API_BASE}/auth/refresh`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            // R3.7. SameSite=strict is the primary CSRF defence; stating the
+            // Origin satisfies the backend's secondary check and means a
+            // cross-site caller is refused before the token is even looked up.
+            Origin: window.location.origin,
+          },
+          body: JSON.stringify({}),
+          credentials: "same-origin",
+          // Without this a refresh on a slow connection hangs `authReady`
+          // forever and the whole app waits behind it.
+          signal: AbortSignal.timeout(10_000),
+        });
+        if (!res.ok) {
+          // 401/403 here means the session is genuinely gone — expired family,
+          // revoked, or signed out elsewhere. Other tabs are holding a token that
+          // no longer works, so tell them rather than leaving them to discover it
+          // one 401 at a time. This also drops *our* token; see
+          // `broadcastSignOut`.
+          if (res.status === 401 || res.status === 403) broadcastSignOut();
+          return null;
+        }
+        const data = (await res.json()) as AuthTokens;
+        if (!data.access_token) return null;
+        setAccessToken(data.access_token);
+        return data.access_token;
+      });
+    } catch {
+      // Network error or the 10s timeout. Treated as "no token", which surfaces
+      // as signed-out. A transient network blip signing someone out is a lesser
+      // evil than a page that never finishes hydrating.
+      return null;
+    } finally {
+      refreshPromise = null;
+    }
+  })();
+  return refreshPromise;
+}
+
+/**
+ * Publish an admin write to the public catalogue immediately.
+ *
+ * The admin panel writes to the backend directly, while `/colleges`,
+ * `/courses` and friends read the same rows through `lib/api-server.ts`'s ISR
+ * cache. Nothing told the cache about the write, so a college created here was
+ * invisible on the public page for `REVALIDATE.catalogList` — five minutes.
+ *
+ * Best-effort by design: a failed revalidation costs a delayed update, and
+ * failing the admin's save over it would be a worse outcome than the delay. The
+ * ISR window remains the backstop, so this only ever makes things fresher.
+ *
+ * `resources` values must exist in `app/api/revalidate/route.ts`'s map; that
+ * route rejects unknown names, and a non-2xx here is deliberately ignored.
+ */
+async function revalidatePublic(resources: string[]): Promise<void> {
+  const token = getAccessToken();
+  if (!token) return;
+  try {
+    await fetch("/api/revalidate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ resources }),
+    });
+  } catch {
+    /* offline or route unavailable — the ISR window still applies */
+  }
+}
+
+/**
+ * `apiFetch` for admin mutations, publishing the affected catalogue on success.
+ *
+ * Applied at the admin call sites rather than inside `apiFetch` itself: the
+ * token refresh and 401-repair path there must stay synchronous with respect to
+ * the response, and `apiFetch` also serves reads, notifications and uploads
+ * that have nothing to revalidate.
+ */
+function adminWrite<T>(path: string, init: RequestInit, resources: string[]): Promise<T> {
+  return apiFetch<T>(path, init).then(async (data) => {
+    await revalidatePublic(resources);
+    return data;
+  });
+}
+
+/**
+ * True for bodies whose Content-Type the runtime already knows.
+ *
+ * `Blob` and `File` cover `FormData` too, since a `FormData` is not an instance
+ * of either and needs its own case. `typeof` guards keep this safe to call
+ * during server rendering, where only `FormData` and `URLSearchParams` are
+ * defined on the Node globals but neither is reached in practice.
+ */
+function bodyCarriesItsOwnContentType(body: BodyInit | null | undefined): boolean {
+  if (typeof FormData !== "undefined" && body instanceof FormData) return true;
+  if (typeof URLSearchParams !== "undefined" && body instanceof URLSearchParams) return true;
+  if (typeof Blob !== "undefined" && body instanceof Blob) return true;
+  return body instanceof ArrayBuffer || ArrayBuffer.isView(body);
+}
+
+async function apiFetchImpl<T>(
+  path: string,
+  init: RequestInit,
+  retriesLeft: number,
+): Promise<T> {
+  const headers = new Headers(init.headers);
+  // `application/json` is only correct for a body the caller serialised itself.
+  // A `FormData` body has to be left alone: the browser derives
+  // `multipart/form-data; boundary=…` from the body, so a hand-set Content-Type
+  // here either drops the boundary (Starlette cannot parse the parts, and the
+  // upload 422s) or makes it look for a part named after the media type.
+  // `URLSearchParams` and `Blob` are in the same position and are covered by the
+  // same check rather than one caller at a time.
+  if (init.body && !headers.has("Content-Type") && !bodyCarriesItsOwnContentType(init.body)) {
+    headers.set("Content-Type", "application/json");
+  }
+  const token = getAccessToken();
+  if (token) {
+    headers.set("Authorization", `Bearer ${token}`);
+  }
+
+  let res = await fetch(`${API_BASE}${path}`, { ...init, headers });
+
+  // Phase 3: an expired access token is repaired once by rotating through the
+  // HttpOnly refresh cookie (automatically attached for same-origin). Auth
+  // endpoints are excluded: /auth/login legitimately 401s and must surface that.
+  if (
+    res.status === 401 &&
+    retriesLeft > 0 &&
+    !path.startsWith("/auth/") &&
+    getAccessToken()
+  ) {
+    // `force`, because the token in hand is the one the server just refused.
+    // Without it the refresh short-circuits and hands back the same dead token.
+    const fresh = await refreshAccessToken({ force: true });
+    if (fresh) {
+      headers.set("Authorization", `Bearer ${fresh}`);
+      res = await fetch(`${API_BASE}${path}`, { ...init, headers });
+    }
+  }
+
+  if (!res.ok) {
+    let detail: unknown;
+    let message = `Request failed (${res.status})`;
+    try {
+      const data = await res.json();
+      detail = data?.detail;
+      if (typeof detail === "string") {
+        message = detail;
+      } else if (Array.isArray(detail)) {
+        message = detail
+          .map((d: { msg?: string }) => d.msg ?? "")
+          .filter(Boolean)
+          .join(", ");
+      } else if (detail && typeof detail === "object") {
+        const structured = detail as { message?: string };
+        if (structured.message) message = structured.message;
+      }
+    } catch {
+      /* body was not JSON */
+    }
+    throw new ApiError(message, res.status, detail);
+  }
+
+  if (res.status === 204) return undefined as T;
+  return (await res.json()) as T;
+}
+
+export const authApi = {
+  login: (payload: LoginPayload) =>
+    apiFetch<AuthTokens>("/auth/login", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+
+  register: (payload: RegisterPayload) =>
+    apiFetch<AuthTokens>("/auth/register", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+
+  me: () => apiFetch<UserMe>("/users/me"),
+
+  myProfile: () => apiFetch<BackendProfile>("/users/me/profile"),
+
+  myRoles: () => apiFetch<UserRoles>("/users/me/roles"),
+
+  /**
+   * Revoke the server-side session.
+   *
+   * No body. The refresh token is an HttpOnly cookie the browser attaches on its
+   * own, and the backend reads it from there (`auth.py:403` falls back to
+   * `request.cookies`). This previously sent `{ refresh_token: … }` read from
+   * local storage, which could only ever be `undefined` — the token moved to a
+   * cookie in Phase 3 — so the field was always dropped by `JSON.stringify` and
+   * the call looked like it needed a credential it does not have.
+   */
+  logout: () =>
+    apiFetch<StandardActionResponse>("/auth/logout", {
+      method: "POST",
+      body: JSON.stringify({}),
+      credentials: "same-origin",
+    }),
+};
+
+/* ------------------------------------------------------------------ *
+ * Mock-test attempt engine
+ * ------------------------------------------------------------------ */
+
+/**
+ * A question as the attempt endpoints serve it.
+ *
+ * Mirrors `AttemptQuestionResponse` (`backend/app/schemas/catalog.py`). Note
+ * what is absent: `correct_answer`, `explanation` and `numeric_answer` are
+ * deliberately withheld by the router until the attempt is graded, so a type
+ * that carried them would be a lie the compiler could not catch.
+ */
+export interface AttemptQuestion {
+  id: number;
+  question_text: string;
+  question_type: string;
+  options: string[] | null;
+  marks: string;
+  negative_marks: string;
+  difficulty: string;
+  sort_order: number;
+  subject: string | null;
+  topic: string | null;
+  /** Echo of what the server has stored for this question so far. */
+  selected_answer: string | null;
+}
+
+/** Mirrors `TestAttemptResponse`. */
+export interface AttemptRecord {
+  id: number;
+  mock_test_id: number;
+  mock_test_name: string | null;
+  status: string;
+  started_at: string;
+  expires_at: string;
+  submitted_at: string | null;
+  score: string | null;
+  total_marks: string | null;
+  correct_count: number | null;
+  incorrect_count: number | null;
+  unanswered_count: number | null;
+  pending_review_count: number | null;
+  percentage: string | null;
+  /**
+   * Server-authoritative clock. The runner derives its countdown from this on
+   * every tick rather than decrementing a local counter, so a backgrounded tab
+   * that loses intervals cannot gain time.
+   */
+  time_remaining_seconds: number;
+}
+
+/** Mirrors `StartAttemptResponse`. */
+export interface StartAttemptResult {
+  attempt: AttemptRecord;
+  questions: AttemptQuestion[];
+}
+
+/** Mirrors `ResultQuestionResponse`: the post-grading projection. */
+export interface ResultQuestion extends AttemptQuestion {
+  is_correct: boolean | null;
+  marks_awarded: string | null;
+  correct_answer: string | null;
+  explanation: string | null;
+  numeric_answer: string | null;
+  tolerance: string | null;
+  grader_feedback: string | null;
+}
+
+/** Mirrors `TestResultResponse`. */
+export interface TestResult {
+  attempt: AttemptRecord;
+  questions: ResultQuestion[];
+}
+
+/**
+ * The server-authoritative attempt flow (Phase 44).
+ *
+ * The client runner used to hold the whole paper in React state and grade it
+ * locally, which meant the backend engine in `backend/app/routers/mock_tests.py`
+ * -- 25 passing tests, attempt limits, expiry enforcement, negative marking --
+ * was unreachable from the browser. These four calls are the whole contract:
+ * start, autosave one answer, read the clock, submit.
+ */
+export const mockTestsApi = {
+  /**
+   * Open an attempt. Resumes rather than duplicates: the router finalises any
+   * attempt whose clock has run out and refuses once `attempts_allowed` is
+   * spent, so a 400 here is a real refusal the UI must surface, not a retry.
+   */
+  start: (ref: string) =>
+    apiFetch<StartAttemptResult>(`/mock-tests/${encodeURIComponent(ref)}/start`, {
+      method: "POST",
+      body: JSON.stringify({}),
+      credentials: "same-origin",
+    }),
+
+  /** Autosave one answer. `null` clears it, which is a deliberate answer state. */
+  saveAnswer: (
+    ref: string,
+    attemptId: number,
+    questionId: number,
+    selectedAnswer: string | null,
+  ) =>
+    apiFetch<AttemptQuestion>(
+      `/mock-tests/${encodeURIComponent(ref)}/attempts/${attemptId}/answers/${questionId}`,
+      {
+        method: "PUT",
+        body: JSON.stringify({ selected_answer: selectedAnswer }),
+        credentials: "same-origin",
+      },
+    ),
+
+  /**
+   * The authoritative clock. Cheap, and the only way to learn that the server
+   * finalised the attempt on the deadline without submitting it.
+   */
+  getAttempt: (ref: string, attemptId: number) =>
+    apiFetch<AttemptRecord>(
+      `/mock-tests/${encodeURIComponent(ref)}/attempts/${attemptId}`,
+      { credentials: "same-origin" },
+    ),
+
+  /**
+   * Grade. Idempotent, and it finalises an expired attempt on the way through,
+   * so a client whose countdown drifted still gets an honest result.
+   */
+  submit: (ref: string, attemptId: number) =>
+    apiFetch<TestResult>(
+      `/mock-tests/${encodeURIComponent(ref)}/attempts/${attemptId}/submit`,
+      {
+        method: "POST",
+        body: JSON.stringify({}),
+        credentials: "same-origin",
+      },
+    ),
+
+  /** This paper's questions, key withheld. `selected_answer` is absent here. */
+  getQuestions: (ref: string) =>
+    apiFetch<Omit<AttemptQuestion, "selected_answer">[]>(
+      `/mock-tests/${encodeURIComponent(ref)}/questions`,
+      { credentials: "same-origin" },
+    ),
+
+  /** This student's graded attempts, for the results and history views. */
+  listAttempts: (ref: string) =>
+    apiFetch<AttemptRecord[]>(
+      `/mock-tests/${encodeURIComponent(ref)}/attempts`,
+      { credentials: "same-origin" },
+    ),
+};
+
+export const ADMIN_ROLES = ["admin", "super_admin"] as const;
+
+/**
+ * Mirrors `CONTENT_ROLES` in `backend/app/roles.py` — `ADMIN_ROLES` plus
+ * `content_manager`.
+ *
+ * Gates `POST /media/upload`, `PUT /media/{id}` and `DELETE /media/{id}`. Kept
+ * separate from `ADMIN_ROLES` because the two are genuinely different sets: a
+ * content manager may upload a college logo without being able to edit colleges.
+ */
+export const CONTENT_ROLES = [...ADMIN_ROLES, "content_manager"] as const;
+
+export function hasAdminRole(roles: readonly string[]): boolean {
+  return ADMIN_ROLES.some((r) => roles.includes(r));
+}
+
+export async function fetchMyRoles(): Promise<string[]> {
+  try {
+    const res = await authApi.myRoles();
+    return Array.isArray(res?.roles) ? res.roles : [];
+  } catch {
+    // A failed role lookup must never be read as "is admin".
+    return [];
+  }
+}
+
+export async function submitEnquiry(payload: EnquiryPayload): Promise<EnquiryResponse> {
+  return apiFetch<EnquiryResponse>("/enquiries", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+/* ------------------------------------------------------------------ *
+ * Suggestions a signed-in student makes about the catalogue.
+ *
+ * These sit outside `adminApi` because the caller is a student, not staff: the
+ * submit path is gated on processing consent, and the owner paths are scoped to
+ * `submitted_by == the caller`. They are deliberately *not* in
+ * `lib/api-server.ts`, whose every quoted path is contract-tested to answer a
+ * public GET — a submission is private and only readable with a token.
+ * ------------------------------------------------------------------ */
+
+/**
+ * `POST /college-submissions` — propose a college for the catalogue.
+ *
+ * The response's `status` is always `pending`: a submission can never become
+ * published on its own, which is the whole point of the workflow. A name that
+ * already exists answers **409**, the same as `PUT` but unlike the college
+ * router's duplicate **400**.
+ */
+export async function submitCollegeSuggestion(
+  payload: CollegeSubmissionPayload,
+): Promise<CollegeSubmission> {
+  return apiFetch<CollegeSubmission>("/college-submissions", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+/** The signed-in user's own submissions, newest first. */
+export async function fetchMyCollegeSubmissions(): Promise<CollegeSubmission[]> {
+  return apiFetch<CollegeSubmission[]>("/college-submissions/my");
+}
+
+/** One submission the caller owns, or any row for a content-role holder. */
+export async function fetchCollegeSubmission(id: number): Promise<CollegeSubmission> {
+  return apiFetch<CollegeSubmission>(`/college-submissions/${id}`);
+}
+
+/**
+ * Owner edit while the row is `pending` or `changes_requested`.
+ *
+ * Editing re-queues the row as `pending`, so an edit after a change request
+ * returns to the queue rather than staying addressed. `PUT` is the method, and
+ * the payload is a partial: only the keys present are applied.
+ */
+export async function updateCollegeSuggestion(
+  id: number,
+  payload: Partial<CollegeSubmissionPayload>,
+): Promise<CollegeSubmission> {
+  return apiFetch<CollegeSubmission>(`/college-submissions/${id}`, {
+    method: "PUT",
+    body: JSON.stringify(payload),
+  });
+}
+
+/** Owner withdraw of a revisable row. 204 on success. */
+export async function withdrawCollegeSuggestion(id: number): Promise<void> {
+  return apiFetch<void>(`/college-submissions/${id}`, { method: "DELETE" });
+}
+
+type CourseLookupRow = { id: number; name: string; degree: string | null };
+
+let coursesCache: CourseLookupRow[] | null = null;
+let statesCache: { id: number; name: string }[] | null = null;
+
+/**
+ * Must stay in step with the backend's `le=` bound on `limit`; a value above
+ * it is rejected with 422, which used to surface as a silently empty course
+ * list rather than an error. Pages are walked so the lookup keeps working as
+ * the catalogue grows past one page.
+ */
+const COURSE_PAGE_SIZE = 100;
+
+async function courseLookup(): Promise<CourseLookupRow[]> {
+  if (!coursesCache) {
+    const rows: CourseLookupRow[] = [];
+    for (;;) {
+      const page = await apiFetch<CourseLookupRow[]>(
+        `/courses?limit=${COURSE_PAGE_SIZE}&offset=${rows.length}`,
+      ).catch(() => null);
+      if (!Array.isArray(page) || page.length === 0) break;
+      rows.push(...page);
+      if (page.length < COURSE_PAGE_SIZE) break;
+    }
+    coursesCache = rows;
+  }
+  return coursesCache;
+}
+
+async function stateLookup(): Promise<NonNullable<typeof statesCache>> {
+  if (!statesCache) {
+    statesCache = await apiFetch<NonNullable<typeof statesCache>>("/locations/states");
+  }
+  return statesCache ?? [];
+}
+
+/**
+ * Every state the backend knows about, for populating a dropdown.
+ *
+ * Exported because the admission form needs a populated `<select>` rather than a
+ * bundled constant: `ALL_STATES` in `lib/data` is derived from the deliberately
+ * empty `COLLEGES` array and is therefore permanently `[]`, so a required
+ * "select a state" validation was rejecting every submission against a dropdown
+ * with no options. Throws on failure so the caller can show free text rather
+ * than an empty list.
+ */
+export async function fetchStateNames(): Promise<string[]> {
+  return (await stateLookup()).map((s) => s.name).filter(Boolean);
+}
+
+/**
+ * Course names, from the live catalogue, for the same reason as
+ * `fetchStateNames`. Falls back to the course's `degree` label when a row has no
+ * name, and de-duplicates case-insensitively so the dropdown does not list
+ * "B.Tech" and "B.Tech " as two options.
+ */
+export async function fetchCourseNames(): Promise<string[]> {
+  const list = await courseLookup();
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const row of list) {
+    const label = (row.name || row.degree || "").trim();
+    if (!label) continue;
+    const key = label.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(label);
+  }
+  return out;
+}
+
+export async function resolveCourseId(name: string): Promise<number | null> {
+  try {
+    const norm = name.trim().toLowerCase();
+    const list = await courseLookup();
+    const hit = list.find(
+      (c) => c.name.toLowerCase() === norm || (c.degree && c.degree.toLowerCase() === norm),
+    );
+    return hit?.id ?? null;
+  } catch {
+    return null;
+  }
+}
+
+export async function resolveStateId(name: string): Promise<number | null> {
+  try {
+    const norm = name.trim().toLowerCase();
+    const list = await stateLookup();
+    const hit = list.find((s) => s.name.toLowerCase() === norm);
+    return hit?.id ?? null;
+  } catch {
+    return null;
+  }
+}
+
+export async function fetchCatalogStats(fallback: CatalogStats = EMPTY_STATS): Promise<CatalogStats> {
+  try {
+    const res = await fetch("/api/stats", { cache: "no-store" });
+    if (!res.ok) return fallback;
+    const data = await res.json();
+    return { ...fallback, ...data, ok: Boolean(data.ok) };
+  } catch {
+    return fallback;
+  }
+}
+
+/**
+ * Read the backend's own health verdict. Never throws: an unreachable backend is
+ * reported as `status: "unreachable"` so the UI can show a measured state rather
+ * than a default that looks healthy.
+ */
+export async function fetchBackendHealth(): Promise<BackendHealth> {
+  try {
+    const res = await fetch("/api/health", { cache: "no-store" });
+    const data = await res.json();
+    return data as BackendHealth;
+  } catch {
+    return {
+      status: "unreachable",
+      checks: {},
+      error: "The health request could not be completed.",
+    };
+  }
+}
+
+/* ------------------------------------------------------------------ *
+ * Saved colleges
+ *
+ * The dashboard used to render a hardcoded shortlist, then quietly fell back to
+ * the `cp_saved` localStorage list. These calls make the signed-in user's
+ * server-side list the source of truth; the local list is only a cache.
+ * ------------------------------------------------------------------ */
+
+export interface SavedCollegeRecord {
+  id: number;
+  college_id: number;
+  saved_at: string;
+  college: {
+    id: number;
+    college_id: string;
+    name: string;
+    slug: string;
+    college_type: string | null;
+    ownership: string | null;
+    city: string | null;
+    state: string | null;
+    university_name: string | null;
+    has_hostel: boolean | null;
+    total_reviews: number;
+    average_rating: string;
+    is_featured: boolean;
+  };
+}
+
+/** Distinguishes "no saved colleges" from "we could not ask the server". */
+export type SavedCollegesResult =
+  | { state: "ok"; records: SavedCollegeRecord[] }
+  /** 400: the account has no StudentProfile yet, so there is nothing to attach saves to. */
+  | { state: "no-profile" }
+  | { state: "error"; message: string };
+
+export async function fetchSavedColleges(): Promise<SavedCollegesResult> {
+  try {
+    const records = await apiFetch<SavedCollegeRecord[]>("/saved-colleges");
+    return { state: "ok", records: Array.isArray(records) ? records : [] };
+  } catch (err) {
+    if (isForbidden(err)) return { state: "error", message: "You do not have access to saved colleges." };
+    if (err instanceof ApiError && err.status === 400) return { state: "no-profile" };
+    if (err instanceof ApiError && err.status === 401) {
+      return { state: "error", message: "Sign in to see your saved colleges." };
+    }
+    return {
+      state: "error",
+      message: err instanceof Error ? err.message : "Could not load saved colleges.",
+    };
+  }
+}
+
+export async function saveCollegeRemote(collegeId: number): Promise<void> {
+  await apiFetch<SavedCollegeRecord>("/saved-colleges", {
+    method: "POST",
+    body: JSON.stringify({ college_id: collegeId }),
+  });
+}
+
+export async function unsaveCollegeRemote(collegeId: number): Promise<void> {
+  await apiFetch<void>(`/saved-colleges/${collegeId}`, { method: "DELETE" });
+}
+
+export function toStudentProfile(p: BackendProfile): StudentProfile {
+  return {
+    name: p.name || p.email.split("@")[0],
+    email: p.email,
+    mobile: p.mobile,
+    city: p.preferred_city ?? "",
+    state: p.preferred_state ?? "",
+    education: p.education_level ? [p.education_level] : [],
+    interests: p.course_interest ? [p.course_interest] : [],
+    preferredState: p.preferred_state ?? "",
+    preferredCity: p.preferred_city ?? "",
+    budgetMin: p.budget_min,
+    budgetMax: p.budget_max,
+  };
+}
+
+/* ------------------------------------------------------------------ *
+ * Admin API
+ *
+ * Every endpoint below is role-gated server-side (see backend/app/dependencies.py
+ * `require_role`). The 403 handling here is for UX only — it is not a security
+ * boundary.
+ * ------------------------------------------------------------------ */
+
+export interface AdminUser {
+  id: number;
+  email: string;
+  mobile: string | null;
+  is_active: boolean;
+  is_email_verified: boolean;
+  is_mobile_verified: boolean;
+  created_at: string;
+  last_login_at: string | null;
+  roles: string[];
+  /** The student's profile name, falling back to the email server-side. */
+  display_name: string;
+}
+
+export interface AdminReview {
+  id: number;
+  college_id: number;
+  rating: number;
+  review_text: string | null;
+  status: string;
+  created_at: string;
+  student_name: string | null;
+}
+
+/* ------------------------------------------------------------------ *
+ * College submissions — the public "suggest a college" workflow
+ * ------------------------------------------------------------------ */
+
+/**
+ * A submission's lifecycle.
+ *
+ * `approved` and `rejected` are terminal; `pending` and `changes_requested` are
+ * the two states the owner may still edit and a reviewer may still act on. The
+ * union is spelled out rather than left as `string` because the queue filter and
+ * the row badge both branch on it, and a typo in either would render an empty
+ * panel with no error.
+ */
+export type CollegeSubmissionStatus =
+  | "pending"
+  | "approved"
+  | "rejected"
+  | "changes_requested";
+
+/**
+ * The public proposal payload — `CollegeSubmissionCreate` on the backend.
+ *
+ * Mirrors the schema key for key, including the `proposed_` prefix, because the
+ * schema sets `extra="forbid"`: an unknown key is a **422**, not a silently
+ * dropped field. `lib/college-submission-form.ts` therefore builds this from the
+ * form rather than spreading the form's own state onto the wire.
+ *
+ * `proposed_name` is the only required field. `proposed_state_id` is a nullable
+ * FK; `proposed_state_name` is the free text a submitter typed, kept alongside
+ * it so an unmatched state is not lost.
+ */
+export interface CollegeSubmissionPayload {
+  proposed_name: string;
+  proposed_official_name?: string | null;
+  proposed_college_type?: string | null;
+  proposed_ownership?: string | null;
+  proposed_university_name?: string | null;
+  proposed_state_id?: number | null;
+  proposed_state_name?: string | null;
+  proposed_city?: string | null;
+  proposed_address?: string | null;
+  proposed_website?: string | null;
+  proposed_email?: string | null;
+  proposed_phone?: string | null;
+  proposed_overview?: string | null;
+  submitter_notes?: string | null;
+}
+
+/**
+ * `CollegeSubmissionResponse` — a queue row plus the resolved names the console
+ * renders without an N+1 lookup.
+ *
+ * `college_id` is null until approval, and `college_slug` links the reviewer to
+ * the published record afterwards. `possible_duplicate_college_id` is the
+ * advisory near-match the submit path stored; it is a hint, never a decision.
+ */
+export interface CollegeSubmission {
+  id: number;
+  submitted_by: number | null;
+  submitter_name: string | null;
+  proposed_name: string;
+  proposed_official_name: string | null;
+  proposed_college_type: string | null;
+  proposed_ownership: string | null;
+  proposed_university_name: string | null;
+  proposed_state_id: number | null;
+  proposed_state_name: string | null;
+  proposed_city: string | null;
+  proposed_address: string | null;
+  proposed_website: string | null;
+  proposed_email: string | null;
+  proposed_phone: string | null;
+  proposed_overview: string | null;
+  submitter_notes: string | null;
+  status: CollegeSubmissionStatus;
+  reviewer_id: number | null;
+  reviewer_name: string | null;
+  reviewer_notes: string | null;
+  reviewed_at: string | null;
+  college_id: number | null;
+  college_name: string | null;
+  college_slug: string | null;
+  /**
+   * Whether the linked college is live in the catalogue. Null when there is no
+   * link yet. The public `/colleges/{slug}` route filters on `is_active`, so an
+   * archived link would 404 — read this before rendering an anchor.
+   */
+  college_is_active: boolean | null;
+  possible_duplicate_college_id: number | null;
+  possible_duplicate_college_name: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AdminEnquiry {
+  id: number;
+  name: string;
+  mobile: string;
+  email: string | null;
+  status: string;
+  created_at: string;
+  source: string | null;
+}
+
+/** One row of `GET /api/v1/leads` — `LeadListItem` on the backend. */
+export interface AdminLead {
+  id: number;
+  name: string;
+  mobile: string;
+  email: string | null;
+  course_name: string | null;
+  college_name: string | null;
+  state_name: string | null;
+  city: string | null;
+  qualification: string | null;
+  message: string | null;
+  source: string | null;
+  status: string;
+  /** Display name, or null when the lead has overflowed to the admins. */
+  assigned_counsellor: string | null;
+  follow_up_date: string | null;
+  created_at: string;
+}
+
+export interface AdminLeadNote {
+  id: number;
+  note: string;
+  created_at: string;
+}
+
+export interface AdminLeadStatusEvent {
+  id: number;
+  old_status: string | null;
+  new_status: string;
+  created_at: string;
+}
+
+/** `GET /api/v1/leads/{id}` — `LeadDetailResponse`: the list row plus its trail. */
+export interface AdminLeadDetail extends AdminLead {
+  notes: AdminLeadNote[];
+  status_history: AdminLeadStatusEvent[];
+}
+
+/** `GET /api/v1/counsellors` — the assign dropdown's roster. */
+export interface AdminCounsellor {
+  id: number;
+  name: string;
+  specialization: string | null;
+  max_leads: number;
+  is_active: boolean;
+  /** Open leads already on this counsellor, against the same rule the round-robin uses. */
+  active_leads: number;
+}
+
+/** The backend's `LEAD_STATUSES`. Kept in step with `schemas/engagement.py`. */
+export const LEAD_STATUSES = [
+  "new",
+  "contacted",
+  "qualified",
+  "proposal",
+  "won",
+  "lost",
+  "closed",
+] as const;
+
+export type LeadStatus = (typeof LEAD_STATUSES)[number];
+
+/* ----------------------------- Question bank ----------------------------- */
+
+/**
+ * The server's `QuestionType` enum. `mcq` and `numeric` are auto-graded; `essay`
+ * is never auto-graded and is routed to manual review, which is what keeps a
+ * descriptive question scoreable at all.
+ *
+ * `ALL_QUESTION_TYPES` in `backend/app/question_types.py` is the source of truth
+ * -- a value outside this list is rejected by the DB CHECK constraint, not just
+ * by the API, so a typo here would not be caught until a 500.
+ */
+export const QUESTION_TYPES = ["mcq", "numeric", "essay"] as const;
+
+export type QuestionType = (typeof QUESTION_TYPES)[number];
+
+/**
+ * A question, as the paper-scoped write routes return it.
+ *
+ * Mirrors `AdminQuestionResponse` in `backend/app/schemas/catalog.py`. Kept
+ * separate from the bank row below because the two endpoints genuinely differ:
+ * the nested POST/PUT routes know only the question, and typed their return as
+ * the bank row would promise `paper_name`/`paper_slug` that never arrive. The
+ * editor does not read them back -- it re-fetches the bank after a save -- but a
+ * type that lies is worse than no type, because the mistake surfaces later, in
+ * whichever component finally trusts it.
+ */
+export interface AdminQuestion {
+  id: number;
+  question_text: string;
+  question_type: string;
+  options: string[] | null;
+  /**
+   * The key for an `mcq`, and it must be one of `options` -- an `mcq` whose key
+   * is not among its options is accepted by every storage layer and then marks
+   * every submission wrong. See `lib/question-form.ts`.
+   */
+  correct_answer: string | null;
+  marks: string;
+  negative_marks: string;
+  difficulty: string;
+  explanation: string | null;
+  sort_order: number;
+  is_active: boolean;
+  subject: string | null;
+  topic: string | null;
+  /** The answer key for a `numeric` question, separate from `correct_answer`. */
+  numeric_answer: string | null;
+  /** Absolute margin: correct when |given - key| <= tolerance. */
+  tolerance: string;
+}
+
+/** A question as the cross-paper bank sees it: the above, plus its paper. */
+export interface AdminQuestionListItem extends AdminQuestion {
+  /**
+   * The owning paper. Present on every bank row because the write path is
+   * `/mock-tests/{ref}/questions` -- a bank row without it cannot be edited.
+   */
+  mock_test_id: number;
+  paper_name: string;
+  paper_slug: string;
+}
+
+export interface AdminQuestionPaper {
+  mock_test_id: number;
+  name: string;
+  slug: string;
+  question_count: number;
+}
+
+/**
+ * Filter values, computed by the server from the rows that exist.
+ *
+ * Subjects and topics are authored content, not configuration. Hardcoding them
+ * in this file means every new paper has to be remembered here, and until
+ * someone remembers, the dropdown offers a subject that matches nothing and
+ * reads as a broken control.
+ */
+export interface AdminQuestionFacets {
+  subjects: string[];
+  topics: string[];
+  difficulties: string[];
+  question_types: string[];
+  papers: AdminQuestionPaper[];
+}
+
+/**
+ * One import job: an uploaded PDF and how far its review has got.
+ *
+ * Mirrors `ImportJobResponse`. `status` is `processing | ready | failed` and is
+ * a real state the panel renders as a spinner, not a missing value -- generation
+ * runs as a FastAPI `BackgroundTask` after the 202, so the job genuinely exists
+ * before its drafts do.
+ */
+export interface ImportJob {
+  id: number;
+  mock_test_id: number;
+  mock_test_name: string | null;
+  /** Display label only. The backend never builds a path from it. */
+  filename: string;
+  file_size: number;
+  page_count: number;
+  text_length: number;
+  status: string;
+  /** A sentence the admin can act on. Never carries the API key. */
+  error_message: string | null;
+  draft_count: number;
+  approved_count: number;
+  rejected_count: number;
+  created_by: number | null;
+  created_at: string;
+  completed_at: string | null;
+}
+
+/**
+ * One AI draft awaiting review, with its key.
+ *
+ * Mirrors `DraftQuestionResponse`. `correct_answer` is here because this route
+ * is admin-only (`CONTENT_ROLES`), which is the same reason the student attempt
+ * endpoints withhold it.
+ */
+export interface ImportDraft {
+  /** The `test_questions` id, not the job id. Approving is a write on this row. */
+  question_id: number;
+  import_job_id: number | null;
+  question_text: string;
+  options: string[] | null;
+  correct_answer: string | null;
+  subject: string | null;
+  topic: string | null;
+  difficulty: string;
+  explanation: string | null;
+  marks: string;
+  negative_marks: string;
+  /** `pending | approved | rejected`. */
+  review_status: string;
+  source: string;
+  sort_order: number;
+  is_active: boolean;
+}
+
+/** Mirrors `ImportResponse`: the job, plus its drafts once they exist. */
+export interface ImportResponse {
+  job: ImportJob;
+  /** Empty while `job.status === "processing"`. */
+  drafts: ImportDraft[];
+  /** Aggregated per-reason notes on what generation dropped. */
+  dropped_reasons: string[];
+  /** True when this upload created its paper rather than adding to one. */
+  created_paper: boolean;
+}
+
+/**
+ * A partial correction to a draft.
+ *
+ * Mirrors `DraftQuestionUpdate`, which is judged against the row's *merged*
+ * state: sending `options` alone cannot strand the existing key outside them.
+ *
+ * Every field is optional, so omit rather than send `null`. `correct_answer` is
+ * the exception worth knowing: the route treats an explicit `null` as a 422
+ * ("An mcq question needs a correct_answer") rather than clearing the key, so
+ * there is no way to unset it -- which is correct, since an MCQ with no key
+ * cannot be scored.
+ */
+export interface DraftQuestionUpdatePayload {
+  question_text?: string;
+  options?: string[];
+  correct_answer?: string;
+  subject?: string | null;
+  topic?: string | null;
+  difficulty?: string;
+  explanation?: string | null;
+  marks?: string;
+  negative_marks?: string;
+}
+
+/**
+ * Body for the question create/update routes.
+ *
+ * Mirrors `TestQuestionCreate` / `TestQuestionUpdate`. Note that the *update*
+ * route uses `exclude_unset=True`, so a key that is absent leaves the column
+ * alone while a key sent as `null` clears it -- `lib/question-form.ts` builds
+ * this object deliberately rather than spreading a form state.
+ */
+export interface QuestionPayload {
+  question_text: string;
+  question_type: QuestionType;
+  options: string[] | null;
+  correct_answer: string | null;
+  subject: string | null;
+  topic: string | null;
+  numeric_answer: string | null;
+  tolerance: string;
+  marks: string;
+  negative_marks: string;
+  difficulty: string;
+  explanation: string | null;
+  sort_order: number;
+}
+
+/**
+ * `TestQuestionUpdate` is `QuestionPayload` plus `is_active`. Separate rather
+ * than optional because the two routes have genuinely different rules: create
+ * has no `is_active` field, and a body carrying one is silently ignored.
+ */
+export interface QuestionUpdatePayload extends QuestionPayload {
+  is_active: boolean;
+}
+
+/**
+ * `AdminNotificationResponse` from `backend/app/schemas/content.py`.
+ *
+ * `message` is nullable on the wire (`NotificationResponse.message: str | None`),
+ * and `user_id`/`username` are present so the admin log can say who a
+ * notification went to — a delivery log that renders every row as anonymous is
+ * the same defect as an audit log that renders every actor as "system".
+ */
+export interface AdminNotification {
+  id: number;
+  user_id: number;
+  username: string | null;
+  title: string;
+  message: string | null;
+  type: string;
+  is_read: boolean;
+  channel: string;
+  created_at: string;
+  /**
+   * The send this row belongs to.
+   *
+   * A broadcast writes one row per student (`user_id` is `NOT NULL`), so the
+   * log would otherwise show one announcement as N unrelated entries. Rows
+   * written before the column existed have `null`, and the panel edits those
+   * individually.
+   */
+  batch_id: string | null;
+}
+
+/** How many rows a batch edit or retraction touched. */
+export interface AdminNotificationBatchResult {
+  batch_id: string;
+  affected: number;
+}
+
+/**
+ * One entry in the admin log: a whole send, not one recipient's copy.
+ *
+ * `GET /notifications` returns delivery rows (one per student); the console
+ * groups them. `notification_id` is a representative row of the send.
+ */
+export interface AdminNotificationSend {
+  notification_id: number;
+  batch_id: string | null;
+  type: string;
+  title: string;
+  message: string | null;
+  channel: string;
+  recipients: number;
+  read_count: number;
+  created_at: string;
+}
+
+/**
+ * The editable columns of a delivered notification, as the update schema
+ * declares them: `type`, `title`, `message`, `channel`, `is_read`.
+ *
+ * `user_id` is absent on purpose: moving a message to a different account is a
+ * re-send, not an edit, and the update schema does not accept it.
+ */
+export type AdminNotificationUpdate = Record<string, unknown>;
+
+/**
+ * `NotificationBroadcastResult`. `created` is the recipient count, so the UI can
+ * report "sent to N students" instead of assuming the press did nothing.
+ */
+export interface AdminNotificationBroadcast {
+  created: number;
+  recipients: AdminNotification[];
+}
+
+export interface AdminBanner {
+  id: number;
+  title: string;
+  /**
+   * CTA line under the title ("Find opportunities"). Only the `hero_card`
+   * position renders it, so `home_top` strip banners leave it null.
+   */
+  subtitle?: string | null;
+  image_url: string | null;
+  link_url: string | null;
+  position: string;
+  display_order: number;
+  is_active: boolean;
+  /**
+   * The optional schedule window, returned by `BannerResponse` but previously
+   * absent from this type. The panel cannot tell a live banner from an expired
+   * or not-yet-started one without them, and "Active" was the only badge it
+   * could render.
+   */
+  start_date?: string | null;
+  end_date?: string | null;
+}
+
+/** `GET /api/v1/locations/states` — 36 rows, no pagination. */
+export interface AdminState {
+  id: number;
+  name: string;
+  code: string;
+  is_union_territory: boolean;
+}
+
+export interface AdminDistrict {
+  id: number;
+  name: string;
+  code: string;
+  state_id: number;
+}
+
+export interface AdminUniversity {
+  id: number;
+  name: string;
+  state_id: number | null;
+  city: string | null;
+  type: string;
+}
+
+/**
+ * Page size for the admin catalogue walk.
+ *
+ * `GET /colleges`, `/universities` and `/courses` all cap `limit` with
+ * `Query(..., le=100)`. `CollegesSection` used to ask for `limit=1000`, which is
+ * a 422 — and because `useAdminResource` turns any thrown error into its error
+ * state, the panel rendered "Could not reach the colleges API" every time and
+ * nobody noticed, because a 422 from an over-large page size looks exactly like
+ * an unreachable server. This constant is held against the real `le=` bounds by
+ * `tests/page-size-contract.test.ts`.
+ */
+export const CATALOG_PAGE_SIZE = 100;
+
+/**
+ * `GET /blogs` and `GET /blog-categories` cap `limit` at 50, not 100.
+ *
+ * Separate from `CATALOG_PAGE_SIZE` rather than derived from it, because a
+ * walk that asked for 100 here would 422 and `fetchAllPages` would throw — the
+ * exact BUG-05 shape. `tests/page-size-contract.test.ts` reads the real `le=`
+ * bounds out of the Python routers and holds this number against them.
+ */
+export const BLOG_PAGE_SIZE = 50;
+
+/** Enough to cover the seeded catalogue with room to spare, and no more. */
+const MAX_CATALOG_ROWS = 5000;
+
+/**
+ * Walk a capped, `offset`-paginated list endpoint to completion.
+ *
+ * Deliberately **not** the failure-tolerant paged fetcher in `api-server.ts`,
+ * which resolves to `[]` on any non-2xx. That is right for a public page that
+ * must render regardless and wrong here: an admin list that silently empties
+ * itself looks like "the catalogue is empty" rather than "the request failed",
+ * and an admin who then creates a duplicate is the cost. A throw becomes the
+ * panel's error state, which says so.
+ *
+ * `signal` is checked between pages, so aborting a walk stops it at the next
+ * page boundary instead of after the last one.
+ */
+export async function fetchAllPages<T>(
+  path: string,
+  pageSize: number = CATALOG_PAGE_SIZE,
+  maxRows: number = MAX_CATALOG_ROWS,
+  signal?: AbortSignal,
+): Promise<T[]> {
+  const rows: T[] = [];
+  const separator = path.includes("?") ? "&" : "?";
+
+  for (;;) {
+    const page = await apiFetch<T[]>(
+      `${path}${separator}limit=${pageSize}&offset=${rows.length}`,
+      { signal },
+    );
+    if (!Array.isArray(page) || page.length === 0) break;
+    rows.push(...page);
+    // A short page means the end of the list.
+    if (page.length < pageSize) break;
+    if (rows.length >= maxRows) break;
+  }
+
+  return rows;
+}
+
+export interface AdminBlog {
+  id: number;
+  title: string;
+  slug: string;
+  status: string;
+  view_count: number;
+  published_at: string | null;
+  created_at: string;
+  category_name: string | null;
+}
+
+/**
+ * `AuditLogResponse` from `backend/app/schemas/content.py`, populated by
+ * `routers/audit.py::_to_response`.
+ *
+ * The actor field is `username` (a `users.display_name`), NOT `user_email`.
+ * This interface previously declared `user_email`, which the backend never
+ * sends, so every audit row resolved to `undefined` and the console rendered
+ * "by system" for all of them — including privileged actions with a real actor
+ * on record. `ip_address` was equally absent from the type and equally present
+ * in every response.
+ */
+export interface AdminAuditLog {
+  id: number;
+  user_id: number | null;
+  username: string | null;
+  action: string;
+  entity_type: string | null;
+  entity_id: number | null;
+  old_value: Record<string, unknown> | null;
+  new_value: Record<string, unknown> | null;
+  ip_address: string | null;
+  created_at: string;
+}
+
+/**
+ * Rows per audit request.
+ *
+ * `GET /audit-logs` defaults to 50 and caps `limit` at 200. The console starts
+ * at the default and grows the window in steps rather than walking every page
+ * of a table that is append-only and has no natural end.
+ */
+export const AUDIT_PAGE_SIZE = 50;
+
+/** The endpoint's hard cap (`Query(50, ge=1, le=200)` in `routers/audit.py`). */
+export const AUDIT_MAX_ROWS = 200;
+
+/** Server-side filters for the audit trail. */
+export interface AdminAuditQuery {
+  /**
+   * Free text matched against the actor's name and email, the action, the
+   * entity type and the source IP. Server-side on purpose: a person's login
+   * history routinely outgrows one page, and a client-side search would only
+   * ever see the rows that happened to load.
+   */
+  q?: string;
+  /** Exact action (`login`, `update_blog`, …). */
+  action?: string;
+  /** Window size, clamped to `AUDIT_MAX_ROWS`. */
+  limit?: number;
+}
+
+export interface AdminRole {
+  id: number;
+  name: string;
+  description: string | null;
+  /**
+   * Whether the *calling* admin may grant this role, computed server-side by the
+   * same `outranks()` that `PATCH /users/{id}` enforces. Never derive this from
+   * the role's name or a client-side privilege table — that is how the console
+   * ends up offering a control whose only outcome is a 403.
+   */
+  grantable: boolean;
+}
+
+export interface AdminUpdateUserPayload {
+  is_active?: boolean;
+  role_ids?: number[];
+  /** Profile name (`student_profiles.name`), not a `users` column. */
+  display_name?: string;
+  email?: string;
+  mobile?: string;
+}
+
+/** A page of users plus the unpaged, filtered total. */
+export interface AdminUserPage {
+  items: AdminUser[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface AdminUserQuery {
+  search?: string;
+  role?: string;
+  is_active?: boolean;
+  limit?: number;
+  offset?: number;
+}
+
+/** One `{name, count}` bucket of a grouped breakdown from the analytics endpoint. */
+export interface AdminAnalyticsNameCount {
+  name: string;
+  count: number;
+}
+
+/** Activity on one calendar day of `GET /api/v1/admin/analytics/overview`. */
+export interface AdminAnalyticsSeriesPoint {
+  date: string;
+  leads: number;
+  registrations: number;
+  attempts: number;
+  reviews: number;
+}
+
+/**
+ * Payload of `GET /api/v1/admin/analytics/overview` — live aggregates over the
+ * platform's own tables, never a fabricated number. Field names mirror the
+ * backend schema (`analytics.py`) verbatim, trailing underscores included.
+ */
+export interface AdminAnalytics {
+  generated_at: string;
+  catalogue: {
+    colleges: number;
+    courses: number;
+    exams: number;
+    scholarships: number;
+    blogs: number;
+    mock_tests: number;
+  };
+  users: {
+    total: number;
+    active: number;
+    new_30d: number;
+    by_role: AdminAnalyticsNameCount[];
+  };
+  leads: {
+    total: number;
+    new_7d: number;
+    new_30d: number;
+    by_status: AdminAnalyticsNameCount[];
+    by_source: AdminAnalyticsNameCount[];
+  };
+  mock_tests: {
+    papers: number;
+    attempts_total: number;
+    attempts_completed: number;
+    average_percentage: number | null;
+    attempts_30d: number;
+    top_papers: { name: string; slug: string; attempts: number }[];
+  };
+  reviews: {
+    total: number;
+    average_rating: number | null;
+    new_30d: number;
+  };
+  saved_colleges: number;
+  series: AdminAnalyticsSeriesPoint[];
+}
+
+/**
+ * `MediaResponse` from `backend/app/schemas/content.py`.
+ *
+ * `url` is `MEDIA_URL_PREFIX/{id}` — a same-origin `/api/v1/media/files/{id}`
+ * path, so it renders through the existing rewrite with no `next.config` remote
+ * pattern and no absolute origin. `file_type` and `file_size` are nullable
+ * because a registry row (one inserted with an external URL rather than an
+ * upload) has neither.
+ */
+export interface AdminMedia {
+  id: number;
+  url: string;
+  file_name: string | null;
+  file_type: string | null;
+  file_size: number | null;
+  alt_text: string | null;
+  entity_type: string | null;
+  entity_id: number | null;
+  image_type: string | null;
+  display_order: number;
+  is_active: boolean;
+  created_at: string;
+}
+
+/**
+ * `CourseResponse` from `backend/app/schemas/catalog.py`.
+ *
+ * Note what is **not** here: `is_active`. The list schema omits it entirely, so
+ * the old courses table rendered a Status column that read a field the response
+ * never carried and showed "Inactive" for every row in the catalogue.
+ */
+export interface AdminCourse {
+  id: number;
+  name: string;
+  slug: string;
+  degree: string | null;
+  duration: string | null;
+  category: string | null;
+  /** Admin-uploaded cover image, or null. */
+  image_url: string | null;
+}
+
+/** `CourseDetailResponse` — the list row plus the three long-text columns. */
+export interface AdminCourseDetail extends AdminCourse {
+  overview: string | null;
+  eligibility: string | null;
+  career_information: string | null;
+  college_count: number;
+}
+
+/** `ExamResponse`. */
+export interface AdminExam {
+  id: number;
+  name: string;
+  slug: string;
+  conducting_authority: string;
+  exam_type: string;
+  eligibility: string | null;
+  application_start_date: string | null;
+  application_deadline: string | null;
+  exam_date: string | null;
+  admit_card_date: string | null;
+  result_date: string | null;
+  official_website: string | null;
+  official_notification: string | null;
+  /**
+   * JSON columns, and typed loosely on purpose. The schema says `dict | None` and
+   * `list | None`; the frontend's older `ApiExam` claimed `string[]` and a
+   * `{question, answer}[]`, neither of which the backend guarantees. `unknown`
+   * means a caller has to look before it renders, which is the honest position.
+   */
+  syllabus: unknown;
+  faqs: unknown;
+  /** Admin-uploaded hero image, or null. */
+  image_url: string | null;
+  is_active: boolean;
+}
+
+/** `ScholarshipResponse`. */
+export interface AdminScholarship {
+  id: number;
+  name: string;
+  slug: string;
+  provider: string;
+  ownership: string;
+  eligibility: string | null;
+  state_id: number | null;
+  state_name: string | null;
+  course: string | null;
+  category: string | null;
+  income_criteria: string | null;
+  /** A `String(255)`, not a number — see `lib/scholarship-form.ts`. */
+  amount: string | null;
+  application_deadline: string | null;
+  documents_required: unknown;
+  application_procedure: string | null;
+  official_website: string | null;
+  verification_status: string;
+  last_verified_date: string | null;
+  next_verification_date: string | null;
+  /** Admin-uploaded image, or null. */
+  image_url: string | null;
+  is_active: boolean;
+}
+
+/** `BlogResponse`. */
+export interface AdminBlogDetail extends AdminBlog {
+  content: string;
+  excerpt: string | null;
+  featured_image_url: string | null;
+  category_id: number | null;
+  author_name: string | null;
+  is_featured: boolean;
+  meta_title: string | null;
+  meta_description: string | null;
+  canonical_url: string | null;
+  updated_at: string;
+}
+
+/** `BlogCategoryResponse`. */
+export interface AdminBlogCategory {
+  id: number;
+  name: string;
+  slug: string;
+  is_active: boolean;
+  blog_count: number;
+}
+
+/** `FAQResponse`. */
+export interface AdminFaq {
+  id: number;
+  question: string;
+  /** `str | None` in the schema; the older `ApiFaq` typed it as `string`. */
+  answer: string | null;
+  entity_type: string;
+  entity_id: number;
+  display_order: number;
+  is_active: boolean;
+  created_at: string;
+}
+
+/**
+ * `SiteSettingsResponse` from `GET` / `PUT /settings`.
+ *
+ * The Settings panel is the only editor. These are the same values the public
+ * site's `SITE` constant publishes, which is why the route is admin-only: the
+ * support address and default formatting are what visitors are shown, so a
+ * mis-edit here is a mis-edit to the site, not to a private preference.
+ */
+export interface SiteSettings {
+  site_name: string;
+  support_email: string;
+  contact_phone: string;
+  counselling_hours: string;
+  default_timezone: string;
+  number_formatting: string;
+  updated_at: string;
+}
+
+/**
+ * The writable subset of {@link SiteSettings}. Every field is optional because
+ * the route is a partial update (`exclude_unset`): the panel sends only the
+ * fields that changed, so saving one field cannot blank the others.
+ */
+export type SiteSettingsUpdate = Partial<
+  Pick<
+    SiteSettings,
+    | "site_name"
+    | "support_email"
+    | "contact_phone"
+    | "counselling_hours"
+    | "default_timezone"
+    | "number_formatting"
+  >
+>;
+
+/**
+ * Where the active credential came from. The console shows this so a super
+ * admin can tell "saved here" from "still coming from the server environment".
+ */
+export type AiKeySource = "database" | "environment" | "none";
+
+/**
+ * `AiSettingsResponse` from `GET` / `PUT /settings/ai` -- super-admin only.
+ *
+ * There is deliberately no `*_api_key` field. The server returns a boolean and
+ * a last-four hint, so a browser (or anyone with the console open) can tell
+ * *which* key is active without holding a credential that spends real money.
+ */
+export interface AiSettings {
+  chat_base_url: string;
+  chat_model: string;
+  chat_api_key_set: boolean;
+  chat_api_key_hint: string | null;
+  chat_api_key_source: AiKeySource;
+  gemini_model: string;
+  gemini_api_key_set: boolean;
+  gemini_api_key_hint: string | null;
+  gemini_api_key_source: AiKeySource;
+  updated_at: string;
+  updated_by: number | null;
+}
+
+/**
+ * The writable subset of {@link AiSettings}. Absent fields are left untouched;
+ * an **empty string** on a key field clears the saved key. `null` would be
+ * ambiguous with "absent", which is why the panel sends `""` to clear.
+ */
+export interface AiSettingsUpdate {
+  chat_base_url?: string;
+  chat_model?: string;
+  chat_api_key?: string;
+  gemini_model?: string;
+  gemini_api_key?: string;
+}
+
+/** Which provider a connection test exercises. */
+export type AiTarget = "chat" | "gemini";
+
+export interface AiSettingsTestInput {
+  target: AiTarget;
+  /** Chat only. Omitted falls back to the saved base URL. */
+  base_url?: string;
+  /** Omitted falls back to the saved model. */
+  model?: string;
+  /** Used for this test only; omitted falls back to the saved key. */
+  api_key?: string;
+}
+
+export interface AiSettingsTestResult {
+  ok: boolean;
+  target: AiTarget;
+  model: string;
+  message: string;
+  latency_ms: number;
+}
+
+/**
+ * `NotificationResponse` — one row in the signed-in user's own inbox.
+ *
+ * Distinct from {@link AdminNotificationSend}: the student endpoints are scoped
+ * to the caller by the server (`/notifications/my`), and `batch_id` is
+ * deliberately not exposed here. A recipient has no business knowing how many
+ * other people got the same message, or that they can address the other copies.
+ */
+export interface StudentNotification {
+  id: number;
+  user_id: number;
+  type: string;
+  title: string;
+  message: string | null;
+  data: Record<string, unknown> | null;
+  is_read: boolean;
+  channel: string;
+  created_at: string;
+}
+
+/**
+ * The signed-in user's inbox.
+ *
+ * These three are the receiving end of the admin console: a broadcast written by
+ * `POST /notifications` is only visible to a student because `/notifications/my`
+ * returns it. Until this existed the student inbox read `cp_notifications` from
+ * `localStorage`, which the server has never written to.
+ */
+export const notificationsApi = {
+  my: () => apiFetch<StudentNotification[]>("/notifications/my"),
+
+  /** Idempotent; a row the caller does not own answers 404. */
+  markRead: (id: number) =>
+    apiFetch<StudentNotification>(`/notifications/${id}/read`, { method: "PUT" }),
+
+  /** Marks every unread row of the caller. Returns how many changed. */
+  markAllRead: () => apiFetch<number>("/notifications/my/read-all", { method: "PUT" }),
+};
+
+export const adminApi = {
+  /**
+   * Filtering and paging happen on the server. The console can only ever hold one
+   * page, so a client-side "Inactive" filter would describe the page and not the
+   * account base. The response is a page + total rather than a bare array, so
+   * the UI can say "1–50 of 312" instead of implying the page is everything.
+   *
+   * `signal` lets the caller cancel a query it has already replaced: the search
+   * box supersedes the previous request on every debounce, and without this the
+   * abandoned ones run to completion against the database.
+   */
+  users: (query: AdminUserQuery = {}, signal?: AbortSignal) => {
+    const params = new URLSearchParams();
+    if (query.search) params.set("search", query.search);
+    if (query.role) params.set("role", query.role);
+    if (query.is_active !== undefined) params.set("is_active", String(query.is_active));
+    if (query.limit !== undefined) params.set("limit", String(query.limit));
+    if (query.offset !== undefined) params.set("offset", String(query.offset));
+    const qs = params.toString();
+    return apiFetch<AdminUserPage>(`/users${qs ? `?${qs}` : ""}`, { signal });
+  },
+
+  roles: () => apiFetch<AdminRole[]>("/roles"),
+
+  /**
+   * Live platform analytics for the console. One aggregation endpoint backs the
+   * whole Analytics panel; there is deliberately no visitor/traffic data (this
+   * codebase tracks no page-view events), so the panel says exactly what the
+   * response contains.
+   */
+  analytics: () => apiFetch<AdminAnalytics>("/admin/analytics/overview"),
+
+  /** `GET /settings` — admin-only. See {@link SiteSettings}. */
+  settings: () => apiFetch<SiteSettings>("/settings"),
+
+  /**
+   * `PUT /settings`. Send only the fields that changed; the server's
+   * `exclude_unset` leaves every field it does not receive untouched, so a
+   * one-field save is a one-field save. `adminApi.settings` reads the merged
+   * result back.
+   */
+  updateSettings: (payload: SiteSettingsUpdate) =>
+    apiFetch<SiteSettings>("/settings", { method: "PUT", body: JSON.stringify(payload) }),
+
+  /**
+   * `GET /settings/ai` - super-admin only. Credentials are never returned in
+   * plaintext; see {@link AiSettings}.
+   */
+  aiSettings: () => apiFetch<AiSettings>("/settings/ai"),
+
+  /**
+   * `PUT /settings/ai`. Send only changed fields. An empty string on a key
+   * field clears it; omitting the field leaves it alone.
+   */
+  updateAiSettings: (payload: AiSettingsUpdate) =>
+    apiFetch<AiSettings>("/settings/ai", {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    }),
+
+  /**
+   * `POST /settings/ai/test` - one live provider call with unsaved draft
+   * values. `200` means the test ran; `ok` says whether the provider accepted
+   * it, so a rejected key renders inline rather than throwing.
+   */
+  testAiSettings: (payload: AiSettingsTestInput) =>
+    apiFetch<AiSettingsTestResult>("/settings/ai/test", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+
+  updateUser: (id: number, payload: AdminUpdateUserPayload) =>
+    apiFetch<AdminUser>(`/users/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),
+
+  /**
+   * `GET /users/{id}` — one account, for the console's View dialog.
+   *
+   * The list response already carries the same fields, so the dialog could read
+   * from the page it was opened on. It calls the endpoint anyway because a page
+   * is a snapshot taken when it loaded, and a role change made in another tab
+   * would otherwise be shown as current.
+   */
+  user: (id: number) => apiFetch<AdminUser>(`/users/${id}`),
+
+  /**
+   * `DELETE /users/{id}` — permanent, and role-gated server-side.
+   *
+   * No `signal`: a delete is not superseded by a later keystroke, and aborting
+   * one mid-flight would leave the caller unable to tell whether it happened.
+   */
+  deleteUser: (id: number) =>
+    apiFetch<{ success: boolean; message: string }>(`/users/${id}`, { method: "DELETE" }),
+
+  /**
+   * The moderation queue, or another explicitly named scope.
+   *
+   * The default is `/moderation` rather than `""` because **there is no
+   * `GET /reviews`**. The router exposes `/college/{ref}`, `/moderation`,
+   * `/my`, `POST /`, `PUT /{id}`, `POST /{id}/moderate` and `DELETE /{id}` —
+   * nothing at the collection root for GET. `params = ""` therefore produced a
+   * 404 that the caller rendered as an empty panel, and any future call site
+   * that omitted the argument would have hit the same wall. Found by
+   * `tests/api-endpoints.test.ts`, which sweeps every wrapper against the
+   * routes the backend actually declares.
+   */
+  reviews: (params = "/moderation") => apiFetch<AdminReview[]>(`/reviews${params}`),
+
+  moderateReview: (id: number, status: "approved" | "rejected", notes?: string) =>
+    apiFetch<AdminReview>(`/reviews/${id}/moderate`, {
+      method: "POST",
+      body: JSON.stringify({ status, moderation_notes: notes ?? null }),
+    }),
+
+  enquiries: () => apiFetch<AdminEnquiry[]>("/enquiries"),
+
+  leads: (params = "") => apiFetch<AdminLead[]>(`/leads${params}`),
+
+  /** `null` in `params` unsets the assignment, matching the backend's own rule. */
+  assignLead: (enquiryId: number, counsellorId: number | null) =>
+    apiFetch<AdminLeadDetail>(`/leads/${enquiryId}/assign`, {
+      method: "PATCH",
+      body: JSON.stringify({ counsellor_id: counsellorId }),
+    }),
+
+  getLead: (enquiryId: number) => apiFetch<AdminLeadDetail>(`/leads/${enquiryId}`),
+
+  addLeadNote: (enquiryId: number, note: string) =>
+    apiFetch<AdminLeadNote>(`/leads/${enquiryId}/notes`, {
+      method: "POST",
+      body: JSON.stringify({ note }),
+    }),
+
+  /** `null` clears the follow-up date. */
+  setLeadFollowUp: (enquiryId: number, followUpDate: string | null) =>
+    apiFetch<AdminLeadDetail>(`/leads/${enquiryId}/follow-up`, {
+      method: "PATCH",
+      body: JSON.stringify({ follow_up_date: followUpDate }),
+    }),
+
+  updateLeadStatus: (enquiryId: number, status: string) =>
+    apiFetch<AdminLeadDetail>(`/leads/${enquiryId}/status`, {
+      method: "PATCH",
+      body: JSON.stringify({ status }),
+    }),
+
+  updateLeadDetails: (
+    enquiryId: number,
+    payload: {
+      name?: string;
+      mobile?: string;
+      email?: string;
+      city?: string;
+      qualification?: string;
+      message?: string;
+    },
+  ) =>
+    apiFetch<AdminLeadDetail>(`/leads/${enquiryId}/details`, {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    }),
+
+  createLead: (payload: {
+    name: string;
+    mobile: string;
+    email?: string | null;
+    course_id?: number | null;
+    college_id?: number | null;
+    state_id?: number | null;
+    city?: string | null;
+    qualification?: string | null;
+    message?: string | null;
+    source?: string | null;
+    age_band: "18_plus" | "under_18";
+    guardian_contact?: string | null;
+  }) =>
+    apiFetch<{ id: number; name: string; status: string }>("/enquiries", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+
+  deleteLead: (enquiryId: number) =>
+    apiFetch<void>(`/leads/${enquiryId}`, {
+      method: "DELETE",
+    }),
+
+  revalidate: (resources: string[]) => revalidatePublic(resources),
+
+  /**
+   * Admin-only roster for the assign dropdown; 403s for a counsellor.
+   *
+   * Walked rather than fetched once: the route defaults to `limit=50` and caps at
+   * 200, so a single call silently truncated the roster at 50 — and the leads
+   * panel uses this same method to populate its assign `<select>`, where a
+   * missing counsellor is a lead that cannot be handed over. `CATALOG_PAGE_SIZE`
+   * (100) is inside the cap.
+   *
+   * Defaults to active-only, which is what the assign dropdown needs: handing a
+   * lead to a deactivated counsellor is rejected by `PATCH /leads/{id}/assign`.
+   * The counsellors panel asks for `includeInactive` so a deactivated counsellor
+   * is still visible instead of vanishing from the roster.
+   */
+  counsellors: (opts: { includeInactive?: boolean } = {}) =>
+    fetchAllPages<AdminCounsellor>(
+      opts.includeInactive ? "/counsellors?include_inactive=true" : "/counsellors",
+    ),
+
+  /**
+   * The cross-paper question bank, walked to completion.
+   *
+   * Always a `fetchAllPages` walk, filtered or not. The route caps `limit` at
+   * 100, so a single page would be a truncated bank that looks complete — and
+   * the page size is deliberately not written here or in the panel:
+   * `tests/page-size-contract.test.ts` fails if an admin section hand-writes
+   * `limit=`, because that is how the college panel came to send `?limit=1000`,
+   * 422, and render as an empty catalogue.
+   */
+  questions: (params = "") =>
+    fetchAllPages<AdminQuestionListItem>(params ? `/questions?${params}` : "/questions"),
+
+  /** What is in the bank, for the filter dropdowns. Never hardcoded. */
+  questionFacets: () => apiFetch<AdminQuestionFacets>("/questions/facets"),
+
+  /**
+   * Question writes are nested under the paper and have always been.
+   * `{ref}` accepts an id or a slug, which is what `paper_slug` on each bank row
+   * is for.
+   */
+  createQuestion: (paperRef: string | number, payload: QuestionPayload) =>
+    apiFetch<AdminQuestion>(`/mock-tests/${paperRef}/questions`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+
+  /**
+   * `PUT`, not `PATCH`: the route is a full replace and uses
+   * `exclude_unset=True`, so a field absent from the body is left alone while a
+   * field sent as `null` clears the column. The form sends every field it owns
+   * on purpose -- see `lib/question-form.ts`.
+   */
+  updateQuestion: (
+    paperRef: string | number,
+    questionId: number,
+    payload: QuestionUpdatePayload,
+  ) =>
+    apiFetch<AdminQuestion>(`/mock-tests/${paperRef}/questions/${questionId}`, {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    }),
+
+  /** Soft delete. Drops the question from the paper, keeps every attempt's answer. */
+  deleteQuestion: (paperRef: string | number, questionId: number) =>
+    apiFetch<void>(`/mock-tests/${paperRef}/questions/${questionId}`, {
+      method: "DELETE",
+    }),
+
+  /* ------------------------------------------------------------------ *
+   * PDF question import
+   *
+   * The AI-generated-drafts path. `POST /question-imports/pdf` takes a PDF,
+   * answers 202 with a job row, and generates MCQ drafts from the text layer in
+   * the background. Nothing is published until a human approves it: a draft sits
+   * at `review_status = "pending"` and `is_active = false`, and the student-facing
+   * question query (`_PUBLISHABLE`) cannot see it.
+   *
+   * Every route here requires `CONTENT_ROLES`, the same set the question bank
+   * panel gates on.
+   * ------------------------------------------------------------------ */
+
+  /**
+   * Upload a PDF and start a generation job.
+   *
+   * `FormData` and it must stay one -- `bodyCarriesItsOwnContentType` in
+   * `apiFetchImpl` is what leaves the multipart boundary alone. A hand-set
+   * `Content-Type` here is the exact 422 `tests/api-endpoints.test.ts` guards
+   * against for `uploadMedia`.
+   *
+   * 202, so the caller polls `questionImport` rather than expecting drafts now.
+   */
+  uploadQuestionImport: (body: FormData) =>
+    apiFetch<ImportResponse>("/question-imports/pdf", { method: "POST", body }),
+
+  /**
+   * Recent jobs, newest first. The server caps this at 20 and offers no paging,
+   * so it is deliberately not walked -- a `limit` here would be the
+   * `?limit=1000` bug `tests/page-size-contract.test.ts` exists to catch.
+   */
+  questionImports: () => apiFetch<ImportJob[]>("/question-imports"),
+
+  /** The poll. Returns drafts once generation has finished. */
+  questionImport: (jobId: number) =>
+    apiFetch<ImportResponse>(`/question-imports/${jobId}`),
+
+  /**
+   * Correct one draft before approving it.
+   *
+   * A partial update, and editing an approved draft sends it back to `pending`,
+   * so the panel cannot assume a badge is stable after a save.
+   */
+  updateQuestionImportDraft: (
+    jobId: number,
+    questionId: number,
+    payload: DraftQuestionUpdatePayload,
+  ) =>
+    apiFetch<ImportDraft>(`/question-imports/${jobId}/drafts/${questionId}`, {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    }),
+
+  reviewQuestionImportDraft: (jobId: number, questionId: number, approved: boolean) =>
+    apiFetch<ImportDraft>(`/question-imports/${jobId}/drafts/${questionId}/review`, {
+      method: "POST",
+      body: JSON.stringify({ approved }),
+    }),
+
+  /**
+   * Approve or reject every still-pending draft in the job.
+   *
+   * Only `pending` rows are touched, and ungradeable ones are skipped rather
+   * than failing the request -- so this can return a job with drafts still
+   * pending. The panel re-reads the returned counts instead of assuming the
+   * batch emptied.
+   */
+  reviewAllQuestionImportDrafts: (jobId: number, approved: boolean) =>
+    apiFetch<ImportJob>(`/question-imports/${jobId}/review-all`, {
+      method: "POST",
+      body: JSON.stringify({ approved }),
+    }),
+
+  /**
+   * Discard the job, its drafts and its stored PDF, whatever state it is in.
+   *
+   * Works on a `processing` job too, which is the only way to clear one stranded
+   * by a worker restart.
+   *
+   * Note what it removes: **approved drafts go too**. The route deletes every
+   * `test_questions` row in the job, so discarding a half-reviewed batch also
+   * takes out the questions it already published. The panel has to say that, or
+   * "Discard" reads like clearing a queue and quietly edits a live paper.
+   */
+  discardQuestionImport: (jobId: number) =>
+    apiFetch<void>(`/question-imports/${jobId}`, { method: "DELETE" }),
+
+  /**
+   * Every banner, including paused, expired and not-yet-scheduled ones.
+   *
+   * `include_inactive=true` is required here, not optional. `list_banners`
+   * filters `where(Banner.is_active)` *and* a start/end date window unless the
+   * flag is set, so the old flagless call could only ever return banners that
+   * were already live. The panel's Pause/Activate toggle was therefore
+   * unreachable in the paused direction: once a banner was paused it vanished
+   * from the console with no route back, and its Status badge — which reads
+   * `is_active` — was structurally always "Active". This is the same defect the
+   * FAQ client documents at {@link adminApi.faqs}.
+   *
+   * Both the list and the by-id handler 403 unless the caller holds
+   * `CONTENT_ROLES`, so the flag cannot be used to enumerate draft banners
+   * anonymously.
+   *
+   * Walked rather than fetched once: the route caps `limit` at 100, which is
+   * exactly `CATALOG_PAGE_SIZE`, and a plain call would silently truncate at the
+   * first 50.
+   */
+  banners: () => fetchAllPages<AdminBanner>("/banners?include_inactive=true"),
+
+  createBanner: (payload: Partial<AdminBanner>) =>
+    apiFetch<AdminBanner>("/banners", { method: "POST", body: JSON.stringify(payload) }),
+
+  updateBanner: (id: number, payload: Partial<AdminBanner>) =>
+    apiFetch<AdminBanner>(`/banners/${id}`, { method: "PUT", body: JSON.stringify(payload) }),
+
+  deleteBanner: (id: number) => apiFetch<void>(`/banners/${id}`, { method: "DELETE" }),
+
+  /**
+   * One page of published posts, or of drafts when the caller asks and holds a
+   * content role.
+   *
+   * `list_blogs` returns **published only** unless both conditions hold: the
+   * caller is in `CONTENT_ROLES` *and* a `status` parameter is present. So this
+   * raw single-page call is kept for narrow uses, and {@link adminApi.blogs} is
+   * what the admin panels call.
+   */
+  blogsPage: (params = "") => apiFetch<AdminBlog[]>(`/blogs${params}`),
+
+  /**
+   * Every article, drafts included.
+   *
+   * The old call was `GET /blogs` with no `status`, which took the route's
+   * `else` branch and returned published posts only. The panel was titled
+   * "Published articles" and every draft in the database was unreachable — not
+   * unlistable, unreachable: `GET /blogs/{ref}` also filters on
+   * `status == "published"`, so a draft could not be opened for editing either.
+   * Both statuses are therefore walked explicitly and merged.
+   *
+   * A caller **without** a content role still gets published-only, whatever
+   * `status` it sends — the gate is on the server and cannot be widened here.
+   */
+  async blogs(): Promise<AdminBlogDetail[]> {
+    const [drafts, published] = await Promise.all([
+      fetchAllPages<AdminBlogDetail>("/blogs?status=draft", BLOG_PAGE_SIZE),
+      fetchAllPages<AdminBlogDetail>("/blogs?status=published", BLOG_PAGE_SIZE),
+    ]);
+    return [...drafts, ...published];
+  },
+
+  /**
+   * The raw row for the edit form.
+   *
+   * Safe only for a **published** post: `get_blog` is the public read and
+   * filters `status == "published"`, so a draft is a 404. The blog panel
+   * therefore prefills from the table row — `GET /blogs` returns `content` for
+   * every row it returns — and does not call this. It exists for the one case
+   * that genuinely needs a fresh read: a published post whose content is long
+   * enough that the panel holds a truncated copy.
+   */
+  blog: (ref: string | number) => apiFetch<AdminBlogDetail>(`/blogs/${ref}`),
+
+  createBlog: (payload: Record<string, unknown>) =>
+    apiFetch<AdminBlogDetail>("/blogs", { method: "POST", body: JSON.stringify(payload) }),
+
+  updateBlog: (ref: string | number, payload: Record<string, unknown>) =>
+    apiFetch<AdminBlogDetail>(`/blogs/${ref}`, { method: "PUT", body: JSON.stringify(payload) }),
+
+  deleteBlog: (ref: string | number) => apiFetch<void>(`/blogs/${ref}`, { method: "DELETE" }),
+
+  blogCategories: () => fetchAllPages<AdminBlogCategory>("/blog-categories", BLOG_PAGE_SIZE),
+
+  /* ------------------------------- Colleges ------------------------------- */
+
+  /**
+   * The whole catalogue, not the first page of it.
+   *
+   * `GET /colleges` caps `limit` at 100 and offers no search and no admin-only
+   * variant. Fetching 100 of 331 colleges would show an admin a third of the
+   * records and label the count 100, which reads as "this is everything". So this
+   * walks the offsets.
+   *
+   * `include_inactive=true` is required, not optional. `list_colleges` filtered
+   * `College.is_active` unconditionally, so deactivating a college removed it from
+   * this console permanently — even though `is_active` is writable on update,
+   * there was no route back. `PUT /colleges/{ref}` also 404s on an inactive row
+   * for a caller without a content role, so it could not be un-deactivated
+   * through the same panel either.
+   *
+   * The server 403s the flag for anyone outside `CONTENT_ROLES`, so it cannot be
+   * used to enumerate draft colleges anonymously. Every caller of this method is
+   * an admin panel.
+   */
+  colleges: () =>
+    fetchAllPages<ApiCollegeListItem>("/colleges?include_inactive=true"),
+
+  college: (ref: string | number) => apiFetch<ApiCollegeDetail>(`/colleges/${ref}`),
+
+  /**
+   * `admin` or `super_admin` only.
+   *
+   * `college_id`, `slug` and `verification_status` are server-generated — the
+   * last is forced to `"unverified"` regardless of the body — so none of them
+   * appear in the payload type.
+   */
+  createCollege: (payload: Record<string, unknown>) =>
+    adminWrite<ApiCollegeDetail>(
+      "/colleges",
+      { method: "POST", body: JSON.stringify(payload) },
+      ["colleges"],
+    ),
+
+  /**
+   * `admin` or `super_admin`. The handler uses `model_dump(exclude_unset=True)`,
+   * so only the keys present in the body are applied and an explicit `null`
+   * clears a column. `lib/college-form.ts` decides which keys those are.
+   */
+  updateCollege: (ref: string | number, payload: Record<string, unknown>) =>
+    adminWrite<ApiCollegeDetail>(
+      `/colleges/${ref}`,
+      { method: "PUT", body: JSON.stringify(payload) },
+      ["colleges"],
+    ),
+
+  /** `super_admin` only, and cascades six dependent tables. 204 on success. */
+  deleteCollege: (ref: string | number) =>
+    adminWrite<void>(`/colleges/${ref}`, { method: "DELETE" }, ["colleges"]),
+
+  states: () => apiFetch<AdminState[]>("/locations/states"),
+
+  districts: (stateId: number) =>
+    apiFetch<AdminDistrict[]>(`/locations/states/${stateId}/districts`),
+
+  universities: () =>
+    fetchAllPages<AdminUniversity>("/universities?include_inactive=true"),
+
+  /**
+   * The course list, shared by the college form's course picker, the media
+   * entity picker and the courses panel. It lives with the other reference
+   * lookups because two of the three callers are not the courses panel; the
+   * courses panel's own read is `adminApi.course(ref)` below.
+   */
+  courses: () => fetchAllPages<AdminCourse>("/courses?include_inactive=true"),
+
+  /**
+   * `GET /notifications` answers with an array and is admin-only. The route did
+   * not exist when this was written — the call 405'd, the panel showed its error
+   * banner, and the console substituted a hardcoded "No notifications sent yet"
+   * row, which is indistinguishable from a genuinely empty log.
+   */
+  notifications: () => apiFetch<AdminNotification[]>("/notifications"),
+
+  /**
+   * The same log, grouped one entry per send.
+   *
+   * The panel uses this rather than grouping `notifications()` in the browser:
+   * that route is paginated per recipient, so an announcement to 500 students
+   * arrives cut in half and a client-side count would report the page size as
+   * the audience.
+   */
+  notificationSends: () => apiFetch<AdminNotificationSend[]>("/notifications/sends"),
+
+  /**
+   * Omitting `user_id` broadcasts to every active student; supplying one targets
+   * that account. `notifications.user_id` is `NOT NULL`, so a broadcast is
+   * fanned out into one row per recipient rather than stored as a single
+   * recipient-less message.
+   */
+  createNotification: (payload: Record<string, unknown>) =>
+    apiFetch<AdminNotificationBroadcast>("/notifications", { method: "POST", body: JSON.stringify(payload) }),
+
+  /**
+   * Edit one delivered notification. Super admin only.
+   *
+   * Used for rows written before `batch_id` existed; everything sent since is
+   * edited through {@link updateNotificationBatch} so the whole send changes at
+   * once.
+   */
+  updateNotification: (id: number, payload: AdminNotificationUpdate) =>
+    apiFetch<AdminNotification>(`/notifications/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    }),
+
+  /** Delete one row. Super admin only; a student has their own path. */
+  deleteNotification: (id: number) =>
+    apiFetch<void>(`/notifications/${id}`, { method: "DELETE" }),
+
+  /**
+   * Rewrite every row of one send.
+   *
+   * The response reports how many rows changed, so the panel can say "updated
+   * for 12 students" instead of implying a single row was touched.
+   */
+  updateNotificationBatch: (batchId: string, payload: AdminNotificationUpdate) =>
+    apiFetch<AdminNotificationBatchResult>(`/notifications/batch/${batchId}`, {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    }),
+
+  /** Retract one send from every recipient's inbox. Super admin only. */
+  deleteNotificationBatch: (batchId: string) =>
+    apiFetch<AdminNotificationBatchResult>(`/notifications/batch/${batchId}`, {
+      method: "DELETE",
+    }),
+
+  /**
+   * One window of the audit trail, newest first.
+   *
+   * Deliberately not `fetchAllPages`: the audit table is append-only and
+   * unbounded, so opening the panel must not walk dozens of pages against the
+   * slowest read in the console. `AuditSection` grows the window in
+   * `AUDIT_PAGE_SIZE` steps up to `AUDIT_MAX_ROWS`.
+   *
+   * The filters live here so no panel hand-writes a `limit=` — the mistake
+   * `tests/page-size-contract.test.ts` exists to catch.
+   */
+  auditLogs: (query: AdminAuditQuery = {}) => {
+    const params = new URLSearchParams();
+    const q = query.q?.trim();
+    if (q) params.set("q", q);
+    if (query.action) params.set("action", query.action);
+    params.set("limit", String(Math.min(query.limit ?? AUDIT_PAGE_SIZE, AUDIT_MAX_ROWS)));
+    return apiFetch<AdminAuditLog[]>(`/audit-logs?${params.toString()}`);
+  },
+
+  mockTests: () => apiFetch<unknown[]>("/mock-tests/admin/all"),
+
+  /**
+   * The whole library, walked to completion.
+   *
+   * Was a single unpaginated call, which returned 50 rows and called that the
+   * library — the route defaults to `limit=50` and caps at 100, so `fetchAllPages`
+   * is the difference between "every asset" and "the first fifty".
+   */
+  media: () => fetchAllPages<AdminMedia>("/media"),
+
+  /**
+   * `POST /media/upload`. The body is `FormData` and must stay one — see the
+   * `bodyCarriesItsOwnContentType` note in `apiFetchImpl`. `MediaCreate` (the
+   * JSON route) is deliberately not exposed here: it writes a row with no file
+   * behind it, which is the orphaned-record case `upload_media` exists to avoid.
+   */
+  uploadMedia: (body: FormData) =>
+    apiFetch<AdminMedia>("/media/upload", { method: "POST", body }),
+
+  /**
+   * Metadata only — this route does not replace the stored bytes, so a claim in
+   * this panel that it can swap the image file would be false.
+   */
+  updateMedia: (id: number, payload: { alt_text?: string | null; image_type?: string | null; display_order?: number; is_active?: boolean }) =>
+    apiFetch<AdminMedia>(`/media/${id}`, { method: "PUT", body: JSON.stringify(payload) }),
+
+  /** Removes the row and, for an uploaded file, the bytes on disk with it. */
+  deleteMedia: (id: number) => apiFetch<void>(`/media/${id}`, { method: "DELETE" }),
+
+  /**
+   * `include_inactive=true` is required here, not optional.
+   *
+   * `list_faqs` filters `where(FAQ.is_active)` unconditionally, so without the
+   * flag an admin listing FAQs never sees a hidden one — and because the edit
+   * dialog loads its record through `GET /faqs/{id}`, which 404'd on an inactive
+   * row, a hidden FAQ could not be reopened either. The panel's Status column
+   * rendered "Hidden" from a field that was structurally always `true`.
+   *
+   * Both endpoints 403 unless the caller holds `CONTENT_ROLES`, so the flag
+   * cannot be used to read unpublished answers anonymously.
+   */
+  faqs: () => fetchAllPages<AdminFaq>("/faqs?include_inactive=true"),
+
+  /** `GET /faqs/{faq_id}` takes a plain integer. */
+  faq: (id: number) =>
+    apiFetch<AdminFaq>(`/faqs/${id}?include_inactive=true`),
+
+  createFaq: (payload: Record<string, unknown>) =>
+    apiFetch<AdminFaq>("/faqs", { method: "POST", body: JSON.stringify(payload) }),
+
+  /**
+   * `FAQUpdate` has no `entity_type` or `entity_id`, so the attachment cannot be
+   * changed after creation — see `lib/faq-form.ts`. The payload type is a plain
+   * record, so nothing stops a caller sending the pair and getting a silent
+   * no-op; the form builder is the thing that keeps it out.
+   */
+  updateFaq: (id: number, payload: Record<string, unknown>) =>
+    apiFetch<AdminFaq>(`/faqs/${id}`, { method: "PUT", body: JSON.stringify(payload) }),
+
+  deleteFaq: (id: number) => apiFetch<void>(`/faqs/${id}`, { method: "DELETE" }),
+
+  /* ------------------------------------------------------------------ *
+   * Courses, scholarships, exams
+   *
+   * These three routers share a shape: `GET ""` (offset-paginated, `le=100`), a
+   * by-ref `GET`, and `POST` / `PUT` / `DELETE` behind role gates that differ per
+   * verb. The `*_ref` path parameter is resolved as an integer when the segment
+   * is all digits and as a slug otherwise, so these take the numeric id — see
+   * `rowRefFor` in `lib/form-parts.ts`.
+   *
+   * Every `PUT` here applies `model_dump(exclude_unset=True)`, which is what makes
+   * the deliberate field omissions in each form module safe: an absent key leaves
+   * the column alone, and only a key that is *sent* can clear it.
+   *
+   * The three lists all cap `limit` at 100. The panels used to ask for 1000 and
+   * 200 respectively, which is a 422 — and `useAdminResource` turns any thrown
+   * error into "Could not reach the API", so those tables showed a connection
+   * error rather than a page-size bug. See `lib/form-parts.ts` for the
+   * `is_active` omission these three share.
+   * ------------------------------------------------------------------ */
+
+  course: (ref: string | number) => apiFetch<AdminCourseDetail>(`/courses/${ref}`),
+
+  createCourse: (payload: Record<string, unknown>) =>
+    adminWrite<AdminCourseDetail>(
+      "/courses",
+      { method: "POST", body: JSON.stringify(payload) },
+      ["courses"],
+    ),
+
+  updateCourse: (ref: string | number, payload: Record<string, unknown>) =>
+    adminWrite<AdminCourseDetail>(
+      `/courses/${ref}`,
+      { method: "PUT", body: JSON.stringify(payload) },
+      ["courses"],
+    ),
+
+  deleteCourse: (ref: string | number) =>
+    adminWrite<void>(`/courses/${ref}`, { method: "DELETE" }, ["courses"]),
+
+  courseCategories: () => apiFetch<string[]>("/courses/categories"),
+
+  scholarships: () =>
+    fetchAllPages<AdminScholarship>("/scholarships?include_inactive=true"),
+
+  scholarship: (ref: string | number) => apiFetch<AdminScholarship>(`/scholarships/${ref}`),
+
+  createScholarship: (payload: Record<string, unknown>) =>
+    adminWrite<AdminScholarship>(
+      "/scholarships",
+      { method: "POST", body: JSON.stringify(payload) },
+      ["scholarships"],
+    ),
+
+  updateScholarship: (ref: string | number, payload: Record<string, unknown>) =>
+    adminWrite<AdminScholarship>(
+      `/scholarships/${ref}`,
+      { method: "PUT", body: JSON.stringify(payload) },
+      ["scholarships"],
+    ),
+
+  deleteScholarship: (ref: string | number) =>
+    adminWrite<void>(`/scholarships/${ref}`, { method: "DELETE" }, ["scholarships"]),
+
+  exams: () => fetchAllPages<AdminExam>("/exams?include_inactive=true"),
+
+  exam: (ref: string | number) => apiFetch<AdminExam>(`/exams/${ref}`),
+
+  createExam: (payload: Record<string, unknown>) =>
+    adminWrite<AdminExam>(
+      "/exams",
+      { method: "POST", body: JSON.stringify(payload) },
+      ["exams"],
+    ),
+
+  updateExam: (ref: string | number, payload: Record<string, unknown>) =>
+    adminWrite<AdminExam>(
+      `/exams/${ref}`,
+      { method: "PUT", body: JSON.stringify(payload) },
+      ["exams"],
+    ),
+
+  deleteExam: (ref: string | number) =>
+    adminWrite<void>(`/exams/${ref}`, { method: "DELETE" }, ["exams"]),
+
+  /* ---------------------------------------------------------------- *
+   * College submission review queue
+   * ---------------------------------------------------------------- */
+
+  /**
+   * The review queue for one status.
+   *
+   * `GET /college-submissions` returns a bare array for a single `status` and
+   * caps `limit` at 100, so this walks the offsets the way every other admin
+   * list does — a pending queue that has grown past one page would otherwise be
+   * silently truncated and read as "that is everything waiting".
+   *
+   * Reading is `CONTENT_ROLES`; the review actions below are `ADMIN_ROLES`.
+   *
+   * `signal` cancels the walk when the status chip changes mid-walk.
+   */
+  collegeSubmissions: (status: CollegeSubmissionStatus = "pending", signal?: AbortSignal) =>
+    fetchAllPages<CollegeSubmission>(
+      `/college-submissions?status=${status}`,
+      CATALOG_PAGE_SIZE,
+      MAX_CATALOG_ROWS,
+      signal,
+    ),
+
+  /** `GET /college-submissions/{id}` — the same read the owner uses. */
+  collegeSubmission: (id: number) => fetchCollegeSubmission(id),
+
+  /**
+   * Approve — the only action that writes to `colleges`.
+   *
+   * `ADMIN_ROLES` only. The server creates a college (active, `unverified`) or
+   * links an exact-name match that appeared since submission, and refuses a
+   * second reviewer with a **409** rather than creating a duplicate. Because a
+   * new college can become publicly visible here, the `colleges` cache tag is
+   * revalidated through `adminWrite`.
+   */
+  approveCollegeSubmission: (id: number, reviewerNotes?: string | null) =>
+    adminWrite<CollegeSubmission>(
+      `/college-submissions/${id}/approve`,
+      { method: "POST", body: JSON.stringify({ reviewer_notes: reviewerNotes ?? null }) },
+      ["colleges"],
+    ),
+
+  /** Reject. Terminal for the row; nothing in the public catalogue changes. */
+  rejectCollegeSubmission: (id: number, reviewerNotes?: string | null) =>
+    apiFetch<CollegeSubmission>(`/college-submissions/${id}/reject`, {
+      method: "POST",
+      body: JSON.stringify({ reviewer_notes: reviewerNotes ?? null }),
+    }),
+
+  /**
+   * Ask the submitter to change something. The row stays revisable, so this
+   * touches nothing public.
+   */
+  requestChangesCollegeSubmission: (id: number, reviewerNotes?: string | null) =>
+    apiFetch<CollegeSubmission>(`/college-submissions/${id}/request-changes`, {
+      method: "POST",
+      body: JSON.stringify({ reviewer_notes: reviewerNotes ?? null }),
+    }),
+
+  /** Admin removal of any row. 204 on success. Nothing public changes. */
+  deleteCollegeSubmission: (id: number) =>
+    apiFetch<void>(`/college-submissions/${id}`, { method: "DELETE" }),
+};
+
+/** True when an error is simply "you don't have the role for this". */
+export function isForbidden(err: unknown): boolean {
+  return err instanceof ApiError && err.status === 403;
+}
+
+/* ------------------------------------------------------------------ *
+ * Phase 3 — OTP, email verification, password reset
+ * ------------------------------------------------------------------ */
+
+/** Shape of the structured 403 `POST /auth/login` returns for an unverified address. */
+interface EmailNotVerifiedDetail {
+  code: "email_not_verified";
+  message: string;
+  email: string;
+  resend_endpoint: string;
+}
+
+/**
+ * True when a login was refused *only* because the address is unconfirmed.
+ *
+ * Narrow on purpose: it must not fire for a deactivated account, which also
+ * returns 403 but with a plain-string detail, or the UI would offer to resend a
+ * confirmation email to somebody who can never use it.
+ */
+export function isEmailNotVerified(err: unknown): err is ApiError & { detail: EmailNotVerifiedDetail } {
+  if (!(err instanceof ApiError) || err.status !== 403) return false;
+  const detail = err.detail as Partial<EmailNotVerifiedDetail> | undefined;
+  return detail?.code === "email_not_verified" && typeof detail.email === "string";
+}
+
+export interface OtpChallenge {
+  success: boolean;
+  message: string;
+  expires_in_seconds: number;
+}
+
+export interface StandardActionResponse {
+  success: boolean;
+  message: string;
+  data: Record<string, unknown>;
+}
+
+export const otpApi = {
+  /** Ask for a sign-in OTP. The response is identical for unknown numbers. */
+  sendLoginOtp: (mobile: string) =>
+    apiFetch<OtpChallenge>("/auth/login/otp/send", {
+      method: "POST",
+      body: JSON.stringify({ mobile }),
+    }),
+
+  verifyLoginOtp: (mobile: string, otp: string) =>
+    apiFetch<AuthTokens>("/auth/login/otp/verify", {
+      method: "POST",
+      body: JSON.stringify({ mobile, otp }),
+    }),
+
+  /** Authenticated: verify the mobile already on the account. */
+  sendMobileOtp: () =>
+    apiFetch<OtpChallenge>("/auth/verify-mobile/send", { method: "POST" }),
+
+  verifyMobile: (mobile: string, otp: string) =>
+    apiFetch<StandardActionResponse>("/auth/verify-mobile/verify", {
+      method: "POST",
+      body: JSON.stringify({ mobile, otp }),
+    }),
+
+  /** Consumes the `?token=` from the confirmation email. */
+  verifyEmail: (token: string) =>
+    apiFetch<StandardActionResponse>("/auth/verify-email", {
+      method: "POST",
+      body: JSON.stringify({ token }),
+    }),
+
+  resendVerification: (email: string) =>
+    apiFetch<StandardActionResponse>("/auth/verify-email/resend", {
+      method: "POST",
+      body: JSON.stringify({ email }),
+    }),
+
+  forgotPassword: (email: string) =>
+    apiFetch<StandardActionResponse>("/auth/forgot-password", {
+      method: "POST",
+      body: JSON.stringify({ email }),
+    }),
+
+  resetPassword: (token: string, newPassword: string) =>
+    apiFetch<StandardActionResponse>("/auth/reset-password", {
+      method: "POST",
+      body: JSON.stringify({ token, new_password: newPassword }),
+    }),
+};
+
+/* ------------------------------------------------------------------ *
+ * DPDP compliance — Phase 9.1 (age gate + parental consent) and 9.4
+ * (data-principal requests).
+ *
+ * Every shape below mirrors `backend/app/schemas/compliance.py` exactly. The
+ * backend models are `extra="forbid"`, so a field that is misspelled here is
+ * not ignored — it is a 422 — which is the reason these are typed rather than
+ * built ad hoc at each call site.
+ * ------------------------------------------------------------------ */
+
+export type AgeBand = "under_18" | "18_plus";
+
+export type GuardianConsentStatus =
+  | "pending"
+  | "verified"
+  | "denied"
+  | "expired"
+  | "withdrawn";
+
+export type DataRequestType =
+  | "access"
+  | "correction"
+  | "erasure"
+  | "withdrawal"
+  | "grievance"
+  | "nomination";
+
+export type DataRequestStatus =
+  | "received"
+  | "acknowledged"
+  | "in_progress"
+  | "completed"
+  | "rejected";
+
+export interface GuardianConsent {
+  id: number;
+  status: GuardianConsentStatus;
+  verification_channel: string;
+  requested_at: string;
+  verified_at: string | null;
+  withdrawn_at: string | null;
+  expires_at: string;
+  consent_version: string | null;
+}
+
+export interface AgeDeclareResponse {
+  age_band: AgeBand | null;
+  is_minor: boolean;
+  processing_allowed: boolean;
+  blocked_reason: string | null;
+  blocked_message: string | null;
+}
+
+export interface ComplianceStatus {
+  age_band: AgeBand | null;
+  is_minor: boolean;
+  age_answered: boolean;
+  processing_allowed: boolean;
+  blocked_reason: string | null;
+  blocked_message: string | null;
+  parental_consent: GuardianConsent | null;
+  sla_days: number;
+}
+
+export interface DataRequest {
+  id: number;
+  request_type: DataRequestType;
+  status: DataRequestStatus;
+  subject: string | null;
+  details: string;
+  received_at: string;
+  acknowledged_at: string | null;
+  due_at: string;
+  completed_at: string | null;
+  resolution: string | null;
+  days_remaining: number;
+  overdue: boolean;
+}
+
+/**
+ * `GET /compliance/parental-consent` answers `null` when no consent exists.
+ * That is valid JSON, so it goes through `apiFetch` like everything else — no
+ * special case. What would *not* be valid is an empty body, and none of these
+ * endpoints send one: the 204 case is handled inside `apiFetchImpl`.
+ */
+export const complianceApi = {
+  /** The whole gate in one round trip. Never `null`. */
+  status: () => apiFetch<ComplianceStatus>("/compliance/status"),
+
+  /**
+   * Declare or correct an age band.
+   *
+   * Both directions are allowed by the backend on purpose: moving towards the
+   * stricter treatment cannot be a way to escalate one's own consent state.
+   */
+  declareAge: (age_band: AgeBand) =>
+    apiFetch<AgeDeclareResponse>("/compliance/age", {
+      method: "POST",
+      body: JSON.stringify({ age_band }),
+    }),
+
+  parentalConsent: () => apiFetch<GuardianConsent | null>("/compliance/parental-consent"),
+
+  requestParentalConsent: (payload: {
+    guardian_name: string;
+    guardian_mobile?: string | null;
+    guardian_email?: string | null;
+  }) =>
+    apiFetch<GuardianConsent>("/compliance/parental-consent/request", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+
+  verifyParentalConsent: (code: string) =>
+    apiFetch<GuardianConsent>("/compliance/parental-consent/verify", {
+      method: "POST",
+      body: JSON.stringify({ code }),
+    }),
+
+  /** No body, no code: withdrawal must be as easy as the grant was. */
+  withdrawParentalConsent: () =>
+    apiFetch<GuardianConsent>("/compliance/parental-consent/withdraw", {
+      method: "POST",
+      body: JSON.stringify({}),
+    }),
+
+  myRequests: () => apiFetch<DataRequest[]>("/compliance/requests"),
+
+  createRequest: (payload: {
+    request_type: DataRequestType;
+    details: string;
+    subject?: string | null;
+  }) =>
+    apiFetch<DataRequest>("/compliance/requests", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+
+  /** Staff queue, soonest deadline first. */
+  adminRequests: () => apiFetch<DataRequest[]>("/compliance/admin/requests"),
+
+  updateAdminRequest: (
+    id: number,
+    payload: { status: DataRequestStatus; resolution?: string | null },
+  ) =>
+    apiFetch<DataRequest>(`/compliance/admin/requests/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    }),
+};

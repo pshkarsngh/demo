@@ -3,49 +3,66 @@ import Link from "next/link";
 import {
   BookOpen,
   ArrowRight,
+  Building2,
   CalendarDays,
-  FileQuestion,
-  Sparkles,
-  MessagesSquare,
+  Scale,
   GraduationCap,
-  Headset,
   Newspaper,
 } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
 import { SectionHeading } from "@/components/ui/SectionHeading";
 import { AdmissionHelpButton } from "@/components/admission/AdmissionForm";
-import { BLOG_POSTS } from "@/lib/data/blog";
+import { JsonLd } from "@/components/seo/JsonLd";
+import { resolveBlogPosts } from "@/lib/content";
+import { breadcrumbLd, ldGraph, pageMetadata } from "@/lib/seo";
 
-export const metadata: Metadata = {
+export const metadata: Metadata = pageMetadata({
   title: "Resources",
   description:
-    "College admission guides, entrance exam tips, counselling strategies, mock tests and career advice — all curated for Indian students.",
-};
+    "College admission guides, entrance exam tips, counselling strategies and career advice — all curated for Indian students.",
+  path: "/resources",
+});
 
+/**
+ * Mock tests, the AI college predictor and the AI assistant were three of these
+ * six tiles. The predictor is still de-listed in `lib/nav.ts`, so the grid is
+ * rebuilt from routes that are actually supported. It stays at six tiles to keep
+ * the `lg:grid-cols-3` rows even; `/ask-ai` and `/mock-tests` are both live and
+ * linked from the header's "More" menu and the footer instead.
+ */
 const HUBS = [
   { title: "Entrance Exams", desc: "Registration dates, patterns and official links for all major exams.", href: "/exams", icon: CalendarDays, tone: "from-purple-600 to-blue-600" },
-  { title: "Mock Tests", desc: "Practice with a real exam timer and instant analytics.", href: "/mock-tests", icon: FileQuestion, tone: "from-emerald-500 to-teal-500" },
-  { title: "AI College Predictor", desc: "Get a personalised college shortlist from your rank.", href: "/college-predictor", icon: Sparkles, tone: "from-orange-500 to-amber-500" },
-  { title: "Ask AI Assistant", desc: "Instant answers to any education question.", href: "/ask-ai", icon: MessagesSquare, tone: "from-blue-600 to-cyan-500" },
   { title: "Scholarships", desc: "Find funding and track application deadlines.", href: "/scholarships", icon: GraduationCap, tone: "from-amber-500 to-yellow-500" },
+  { title: "Compare Colleges", desc: "Put fees, placements and facilities side by side.", href: "/compare", icon: Scale, tone: "from-blue-600 to-cyan-500" },
+  { title: "College Catalogue", desc: "Search every college in the catalogue by course, city and budget.", href: "/colleges", icon: Building2, tone: "from-emerald-500 to-teal-500" },
   { title: "Blog & Articles", desc: "Guides on admissions, careers, exams and education news.", href: "/blog", icon: Newspaper, tone: "from-rose-500 to-pink-500" },
+  { title: "Student Reviews", desc: "Read what other students say about a college.", href: "/reviews", icon: BookOpen, tone: "from-violet-600 to-purple-600" },
 ];
 
-export default function ResourcesPage() {
-  const guides = BLOG_POSTS.slice(0, 6);
+export default async function ResourcesPage() {
+  const { data: posts } = await resolveBlogPosts();
+  const guides = posts.slice(0, 6);
+
+  const jsonLd = ldGraph([
+    breadcrumbLd([
+      { name: "Home", path: "/" },
+      { name: "Resources", path: "/resources" },
+    ]),
+  ]);
 
   return (
-    <section className="mx-auto max-w-7xl px-4 py-10 sm:px-6 lg:px-8 lg:py-16">
+    <section className="mx-auto max-w-7xl px-4 pt-28 pb-12 sm:px-6 sm:pt-32 lg:px-8 lg:pt-36 lg:pb-16">
+      <JsonLd data={jsonLd} />
       <div className="max-w-2xl">
-        <p className="mb-2 flex items-center gap-2 text-xs font-bold uppercase tracking-[0.14em] text-blue-600">
+        <p className="mb-2.5 flex items-center gap-2 text-xs font-bold uppercase tracking-[0.14em] text-blue-600 dark:text-blue-400">
           <BookOpen className="h-4 w-4" /> Student resource hub
         </p>
-        <h1 className="font-display text-3xl font-extrabold tracking-tight text-purple-950 sm:text-4xl">
+        <h1 className="font-display text-3xl font-extrabold tracking-tight text-purple-950 dark:text-white sm:text-4xl">
           Resources
         </h1>
         <p className="mt-3 text-sm leading-relaxed text-gray-600 sm:text-base">
-          Every tool and guide you need — exams, mock tests, the predictor, AI assistance,
-          scholarships and expert articles.
+          Every guide and tool we support today — exam calendars, scholarships,
+          the college catalogue, comparison, and expert articles.
         </p>
       </div>
 
@@ -103,10 +120,10 @@ export default function ResourcesPage() {
         <div className="mt-5 flex flex-wrap items-center justify-center gap-3">
           <AdmissionHelpButton label="Talk to a counsellor" />
           <Link
-            href="/dashboard"
+            href="/colleges"
             className="inline-flex h-11 items-center gap-2 rounded-xl border border-white/30 bg-white/10 px-6 text-sm font-bold text-white backdrop-blur transition hover:bg-white/20"
           >
-            <Headset className="h-4 w-4" /> Open dashboard
+            <Building2 className="h-4 w-4" /> Browse colleges
           </Link>
         </div>
       </div>

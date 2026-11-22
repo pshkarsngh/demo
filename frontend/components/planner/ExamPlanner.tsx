@@ -78,6 +78,8 @@ export function ExamPlanner() {
   const [note, setNote] = useState("");
 
   useEffect(() => {
+    // Hydrate persisted planner entries from localStorage on first mount.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setPlans(loadPlans());
   }, []);
 

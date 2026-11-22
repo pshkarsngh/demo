@@ -192,3 +192,10 @@ export const SCHOLARSHIPS: Scholarship[] = [
     website: "https://www.hdfcbank.com",
   },
 ];
+
+export function getScholarshipBySlug(
+  slug: string,
+  dataset: Scholarship[] = SCHOLARSHIPS,
+): Scholarship | undefined {
+  return dataset.find((s) => s.id === slug || s.name.toLowerCase().replace(/[^a-z0-9]+/g, "-") === slug);
+}

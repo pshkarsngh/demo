@@ -16,7 +16,7 @@ import {
 } from "lucide-react";
 import type { College } from "@/lib/types";
 import { useApp } from "@/lib/context/AppContext";
-import { cn, formatINR, matchScore } from "@/lib/utils";
+import { cn, formatINR, strengthScore, strengthLabel } from "@/lib/utils";
 import { Rating } from "@/components/ui/Rating";
 import { Badge } from "@/components/ui/Badge";
 import { CampusArt, CollegeLogo } from "@/components/college/CampusArt";
@@ -29,9 +29,15 @@ export function CollegeCard({ college }: CollegeCardProps) {
   const { isSaved, toggleSave, isComparing, toggleCompare } = useApp();
   const saved = isSaved(college.id);
   const comparing = isComparing(college.id);
-  const minFee = Math.min(...college.courses.map((c) => c.feePerYear));
-  const maxFee = Math.max(...college.courses.map((c) => c.feePerYear));
+
+  // Guard against empty course lists — spreading [] into Math.min yields Infinity.
+  const fees = college.courses.map((c) => c.feePerYear).filter((f) => f > 0);
+  const minFee = fees.length ? Math.min(...fees) : 0;
+  const maxFee = fees.length ? Math.max(...fees) : 0;
   const popular = college.courses.slice(0, 3);
+
+  const strength = strengthScore(college);
+  const strengthName = strengthLabel(strength);
 
   return (
     <article className="group flex flex-col overflow-hidden rounded-2xl bg-white dark:bg-slate-900 ring-1 ring-purple-100/60 dark:ring-slate-800 card-shadow transition-all duration-300 hover:-translate-y-1 hover:card-shadow-hover hover:ring-purple-200 dark:hover:ring-slate-700">
@@ -40,13 +46,16 @@ export function CollegeCard({ college }: CollegeCardProps) {
           <CampusArt
             gradientId={college.gradientId}
             initials={college.initials}
+            imageUrl={college.imageUrl}
             className="h-32 w-full transition-transform duration-500 group-hover:scale-[1.05] sm:h-36"
           />
         </Link>
         <div className="absolute left-3 top-3 flex flex-col items-start gap-1.5">
-          <span className="match-badge rounded-full px-2.5 py-1 font-accent text-[11px] font-bold">
-            {matchScore(college.id)}% Match
-          </span>
+          {strength >= 35 ? (
+            <span className="match-badge rounded-full px-2.5 py-1 font-accent text-[11px] font-bold">
+              {strength}% · {strengthName}
+            </span>
+          ) : null}
           {college.featured && (
             <Badge variant="yellow" className="shadow-sm">
               <BadgeCheck className="h-3 w-3" /> Featured
@@ -74,6 +83,7 @@ export function CollegeCard({ college }: CollegeCardProps) {
             <CollegeLogo
               initials={college.initials}
               gradientId={college.gradientId}
+              imageUrl={college.imageUrl}
               size="md"
               className="-mt-8 ring-4 ring-white dark:ring-slate-900"
             />
@@ -147,7 +157,7 @@ export function CollegeCard({ college }: CollegeCardProps) {
         <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-gray-100 dark:border-slate-800 pt-3">
           <Link
             href={`/colleges/${college.slug}`}
-            className="inline-flex h-9 flex-1 items-center justify-center gap-1.5 rounded-lg bg-brand-gradient text-sm font-semibold text-white transition hover:brightness-110"
+            className="inline-flex h-9.5 flex-1 items-center justify-center gap-1.5 rounded-xl bg-brand-gradient text-sm font-semibold text-white shadow-sm transition hover:brightness-110 active:scale-[0.98]"
           >
             View College <ArrowRight className="h-4 w-4" />
           </Link>
@@ -155,7 +165,7 @@ export function CollegeCard({ college }: CollegeCardProps) {
             aria-pressed={comparing}
             onClick={() => toggleCompare(college.id, college.shortName)}
             className={cn(
-              "inline-flex h-9 items-center justify-center gap-1.5 rounded-lg px-3.5 text-sm font-semibold ring-1 ring-inset transition",
+              "inline-flex h-9.5 items-center justify-center gap-1.5 rounded-xl px-3.5 text-sm font-semibold ring-1 ring-inset transition active:scale-[0.98]",
               comparing
                 ? "bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 ring-emerald-300 dark:ring-emerald-700 animate-pop-in"
                 : "bg-white dark:bg-slate-800 text-blue-700 dark:text-blue-300 ring-blue-200 dark:ring-slate-700 hover:bg-blue-50 dark:hover:bg-slate-700",

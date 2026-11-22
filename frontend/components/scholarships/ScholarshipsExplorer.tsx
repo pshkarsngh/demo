@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import {
   Award,
   ExternalLink,
@@ -18,8 +18,6 @@ import { Button } from "@/components/ui/Button";
 import { cn } from "@/lib/utils";
 import { useApp } from "@/lib/context/AppContext";
 import type { Scholarship } from "@/lib/types";
-
-const TAGS = ["All", "Merit", "Need", "Women", "Engineering", "Premier"];
 
 function ScholarshipDetail({ sch, onClose }: { sch: Scholarship; onClose: () => void }) {
   const { isScholarshipSaved, toggleScholarshipSave } = useApp();
@@ -116,14 +114,31 @@ function ScholarshipDetail({ sch, onClose }: { sch: Scholarship; onClose: () => 
   );
 }
 
-export default function ScholarshipsExplorer() {
+export default function ScholarshipsExplorer({
+  scholarships: dataset,
+}: {
+  /** Scholarship list resolved on the server. */
+  scholarships?: Scholarship[];
+}) {
   const [tag, setTag] = useState("All");
   const [selected, setSelected] = useState<Scholarship | null>(null);
   const { isScholarshipSaved, toggleScholarshipSave } = useApp();
+
+  const list = useMemo(
+    () => (dataset?.length ? dataset : SCHOLARSHIPS),
+    [dataset],
+  );
+
+  // Derive filter chips from the data so the panel never offers an empty filter.
+  const tags = useMemo(
+    () => ["All", ...Array.from(new Set(list.flatMap((s) => s.tags))).sort()],
+    [list],
+  );
+
   const eligible = (sch: Scholarship) => tag === "All" || sch.tags.includes(tag);
 
   return (
-    <section className="mx-auto max-w-7xl px-4 py-10 sm:px-6 lg:px-8 lg:py-16">
+    <section className="mx-auto max-w-7xl px-4 pt-28 pb-12 sm:px-6 sm:pt-32 lg:px-8 lg:pt-36 lg:pb-16">
       <div className="max-w-2xl">
         <p className="mb-2 flex items-center gap-2 text-xs font-bold uppercase tracking-[0.14em] text-orange-600">
           <GraduationCap className="h-4 w-4" /> Financial support
@@ -136,7 +151,7 @@ export default function ScholarshipsExplorer() {
           explore funding that can make your education more affordable.
         </p>
         <div className="mt-6 flex flex-wrap gap-2">
-          {TAGS.map((t) => (
+          {tags.map((t) => (
             <Chip key={t} active={tag === t} onClick={() => setTag(t)}>
               {t}
             </Chip>
@@ -145,14 +160,32 @@ export default function ScholarshipsExplorer() {
       </div>
 
       <div className="mt-8 grid gap-5 pb-10 sm:grid-cols-2 lg:grid-cols-3">
-        {SCHOLARSHIPS.filter(eligible).map((s) => {
+        {list.filter(eligible).map((s) => {
           const saved = isScholarshipSaved(s.id);
           return (
             <article
               key={s.id}
               className="relative flex flex-col overflow-hidden rounded-2xl bg-white ring-1 ring-orange-100/70 card-shadow transition-all hover:-translate-y-1 hover:shadow-lg"
             >
-              <div className={`h-1.5 w-full bg-gradient-to-r ${s.color}`} />
+              {/* An admin-uploaded image replaces the 1.5px colour strip with a
+                  real banner. The strip is the fallback, not a permanent
+                  ornament, so it is only drawn when there is no image. */}
+              {s.imageUrl ? (
+                <div className="relative h-28 w-full overflow-hidden bg-slate-100">
+                  {/* eslint-disable-next-line @next/next/no-img-element -- the
+                      URL is same-origin media or an admin-supplied host. */}
+                  <img
+                    src={s.imageUrl}
+                    alt=""
+                    loading="lazy"
+                    decoding="async"
+                    className="h-full w-full object-cover"
+                  />
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/25 to-transparent" />
+                </div>
+              ) : (
+                <div className={`h-1.5 w-full bg-gradient-to-r ${s.color}`} />
+              )}
               <div className="flex flex-1 flex-col p-5">
                 <div className="flex items-start justify-between gap-3">
                   <span className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-gradient-to-br text-white shadow-sm ${s.color}`}>

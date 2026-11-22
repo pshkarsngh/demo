@@ -10,12 +10,17 @@ import {
   Globe,
   BadgeCheck,
 } from "lucide-react";
+import { AboutFacts } from "@/components/home/AboutFacts";
+import { JsonLd } from "@/components/seo/JsonLd";
+import { breadcrumbLd, ldGraph, pageMetadata } from "@/lib/seo";
+import { SITE } from "@/lib/site";
 
-export const metadata: Metadata = {
+export const metadata: Metadata = pageMetadata({
   title: "About",
   description:
-    "Learn about CampusPulse — our mission to help every Indian student find the right college, with transparency and data-driven discovery.",
-};
+    "Learn about Padhaanewala — our mission to help every Indian student find the right college, with transparency and data-driven discovery.",
+  path: "/about",
+});
 
 const VALUES = [
   {
@@ -39,14 +44,22 @@ const VALUES = [
   {
     icon: Globe,
     title: "Accessible to all",
-    desc: "CampusPulse is free to use for all students, regardless of background, language or economic status.",
+    desc: "Padhaanewala is free to use for all students, regardless of background, language or economic status.",
     color: "bg-emerald-50 text-emerald-500",
   },
 ];
 
 export default function AboutPage() {
+  const jsonLd = ldGraph([
+    breadcrumbLd([
+      { name: "Home", path: "/" },
+      { name: "About", path: "/about" },
+    ]),
+  ]);
+
   return (
-    <section className="mx-auto max-w-7xl px-4 py-10 sm:px-6 lg:px-8 lg:py-16">
+    <section className="mx-auto max-w-7xl px-4 pt-28 pb-10 sm:px-6 sm:pt-32 lg:px-8 lg:pt-36 lg:pb-16">
+      <JsonLd data={jsonLd} />
       {/* hero */}
       <div className="relative isolate overflow-hidden rounded-3xl bg-gradient-to-br from-purple-100/80 via-white to-blue-50/70 dark:from-purple-950/60 dark:via-slate-900 dark:to-blue-950/60 dark:border dark:border-purple-800/40 px-6 py-14 text-center sm:px-12 lg:py-20 shadow-sm">
         <div className="pointer-events-none absolute inset-0 -z-10">
@@ -54,13 +67,13 @@ export default function AboutPage() {
           <div className="absolute -right-10 top-10 h-64 w-64 rounded-full bg-orange-300/15 dark:bg-orange-500/10 blur-3xl animate-float-slower" />
         </div>
         <span className="inline-flex items-center gap-2 rounded-full bg-purple-100 dark:bg-purple-900/50 px-4 py-1.5 text-xs font-bold text-purple-700 dark:text-purple-300">
-          <BadgeCheck className="h-3.5 w-3.5" /> Since 2024
+          <BadgeCheck className="h-3.5 w-3.5" /> Since {SITE.foundedYear}
         </span>
         <h1 className="font-display mx-auto mt-5 max-w-2xl text-3xl font-extrabold leading-tight tracking-tight text-purple-950 dark:text-white sm:text-4xl lg:text-[2.6rem]">
           Helping Indian students make smarter college decisions
         </h1>
         <p className="mx-auto mt-4 max-w-xl text-sm leading-relaxed text-gray-600 dark:text-gray-300 sm:text-base">
-          We started CampusPulse because finding the right college in India is
+          We started Padhaanewala because finding the right college in India is
           harder than it needs to be. Outdated directories, confusing fees and
           unreliable rankings make a simple decision feel impossible.
         </p>
@@ -116,40 +129,42 @@ export default function AboutPage() {
           </p>
           <ul className="mt-6 space-y-3 text-sm text-purple-100">
             <li className="flex items-center gap-3">
-              <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-white/15">
-                <Mail className="h-4 w-4" />
-              </span>
-              hello@campuspulse.in
+              <a
+                href={`mailto:${SITE.email}`}
+                className="flex items-center gap-3 transition hover:text-white hover:underline"
+              >
+                <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-white/15">
+                  <Mail className="h-4 w-4" />
+                </span>
+                {SITE.email}
+              </a>
             </li>
             <li className="flex items-center gap-3">
-              <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-white/15">
-                <Phone className="h-4 w-4" />
-              </span>
-              +91 90000 00000
+              <a
+                href={`tel:${SITE.phoneRaw}`}
+                className="flex items-center gap-3 transition hover:text-white hover:underline"
+              >
+                <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-white/15">
+                  <Phone className="h-4 w-4" />
+                </span>
+                {SITE.phone}
+              </a>
             </li>
             <li className="flex items-center gap-3">
               <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-white/15">
                 <MapPin className="h-4 w-4" />
               </span>
-              Bengaluru, Karnataka, India
+              {SITE.address.locality}, {SITE.address.region}, India
             </li>
           </ul>
         </div>
         <div className="mt-8 lg:mt-0 lg:w-80">
-          <div className="rounded-2xl bg-white/10 p-6 backdrop-blur">
-            <h3 className="text-sm font-bold text-white">Quick facts</h3>
-            <dl className="mt-3 space-y-3 text-sm">
-              <div className="flex justify-between"><dt className="text-purple-200">Founded</dt><dd className="font-bold text-white">2024</dd></div>
-              <div className="flex justify-between"><dt className="text-purple-200">Colleges listed</dt><dd className="font-bold text-white">1,400+</dd></div>
-              <div className="flex justify-between"><dt className="text-purple-200">Students/month</dt><dd className="font-bold text-white">2.4 lakh+</dd></div>
-              <div className="flex justify-between"><dt className="text-purple-200">Headquarters</dt><dd className="font-bold text-white">Bengaluru, India</dd></div>
-            </dl>
-          </div>
+          <AboutFacts />
         </div>
       </div>
 
       <p className="mt-10 text-center text-sm text-gray-400">
-        Built with care by the CampusPulse team for students who dream big.
+        Built with care by the Padhaanewala team for students who dream big.
       </p>
     </section>
   );

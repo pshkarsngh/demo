@@ -2,59 +2,36 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import {
   Menu,
   X,
-  ArrowRight,
-  Search,
-  GraduationCap,
-  Compass,
-  Scale,
-  Award,
-  BookOpen,
-  Building2,
   LayoutDashboard,
-  Sparkles,
-  FileQuestion,
-  CalendarDays,
-  MessagesSquare,
-  PenLine,
-  Phone,
+  ShieldCheck,
+  Compass,
   ChevronDown,
   HelpCircle,
-  Newspaper,
+  LogOut,
 } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { cn, initialsOf } from "@/lib/utils";
 import { ButtonLink } from "@/components/ui/Button";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { ThemeToggle } from "@/components/layout/ThemeToggle";
-
-const PRIMARY_NAV = [
-  { label: "Colleges", href: "/colleges", icon: Building2 },
-  { label: "Courses", href: "/courses", icon: GraduationCap },
-  { label: "Predictor", href: "/college-predictor", icon: Sparkles },
-  { label: "Scholarships", href: "/scholarships", icon: Award },
-  { label: "Mock Tests", href: "/mock-tests", icon: FileQuestion },
-  { label: "Exams", href: "/exams", icon: CalendarDays },
-];
-
-const MORE_NAV = [
-  { label: "Compare", href: "/compare", icon: Scale },
-  { label: "AI Assistant", href: "/ask-ai", icon: MessagesSquare },
-  { label: "Reviews", href: "/reviews", icon: PenLine },
-  { label: "Blog", href: "/blog", icon: Newspaper },
-  { label: "Resources", href: "/resources", icon: BookOpen },
-  { label: "About", href: "/about", icon: Compass },
-  { label: "Contact", href: "/contact", icon: Phone },
-  { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
-];
+import { NotificationBell } from "@/components/layout/NotificationBell";
+import { useApp } from "@/lib/context/AppContext";
+import { MORE_NAV, PRIMARY_NAV } from "@/lib/nav";
 
 export function Logo({ dark = false, showTagline = false }: { dark?: boolean; showTagline?: boolean }) {
   return (
     <Link href="/" className="flex items-center gap-2.5" aria-label="padhaanewala home">
-      <span className="relative grid h-9 w-9 place-items-center rounded-full bg-gradient-to-tr from-purple-600 to-indigo-500 text-white shadow-md shadow-purple-600/30">
-        <GraduationCap className="h-5 w-5" />
-      </span>
+      <Image
+        src="/logo.png"
+        alt="padhaanewala logo"
+        width={40}
+        height={40}
+        className="h-10 w-auto object-contain shrink-0"
+        priority
+      />
       <span className="leading-none">
         <span
           className={cn(
@@ -82,9 +59,15 @@ export function Logo({ dark = false, showTagline = false }: { dark?: boolean; sh
 export function Header() {
   const [open, setOpen] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
+  const [authMenuOpen, setAuthMenuOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
   const pathname = usePathname();
+  const router = useRouter();
   const moreRef = useRef<HTMLDivElement | null>(null);
+  const authRef = useRef<HTMLDivElement | null>(null);
+  const { isAuthenticated, isAdmin, profile, logout } = useApp();
+  const userName = profile?.name?.trim() || "";
+  const userInitials = initialsOf(userName) || (profile?.email ? profile.email.slice(0, 2).toUpperCase() : "U");
 
   useEffect(() => {
     let ticking = false;
@@ -117,10 +100,18 @@ export function Header() {
   useEffect(() => {
     const onClick = (e: MouseEvent) => {
       if (moreRef.current && !moreRef.current.contains(e.target as Node)) setMoreOpen(false);
+      if (authRef.current && !authRef.current.contains(e.target as Node)) setAuthMenuOpen(false);
     };
     document.addEventListener("mousedown", onClick);
     return () => document.removeEventListener("mousedown", onClick);
   }, []);
+
+  const handleLogout = () => {
+    setAuthMenuOpen(false);
+    setOpen(false);
+    logout();
+    router.push("/");
+  };
 
   const isActive = (href: string) => pathname === href || pathname.startsWith(href + "/");
   const isMoreActive = MORE_NAV.some((i) => isActive(i.href));
@@ -131,8 +122,8 @@ export function Header() {
         className={cn(
           "pointer-events-auto mx-auto flex items-center justify-between gap-3 backdrop-blur-xl floating-pill-nav",
           scrolled
-            ? "scrolled bg-white/92 dark:bg-slate-900/92 py-2 px-4 sm:px-6"
-            : "bg-white/80 dark:bg-slate-900/80 py-3 px-5 sm:px-7"
+            ? "scrolled bg-white/92 dark:bg-slate-900/92 py-2 px-5 sm:px-8"
+            : "bg-white/80 dark:bg-slate-900/80 py-3 px-6 sm:px-10"
         )}
       >
         {/* Left: Logo + Name */}
@@ -201,31 +192,103 @@ export function Header() {
           </div>
         </nav>
 
-        {/* Right: Circular Theme Toggle & Get Started Button */}
-        <div className="hidden items-center gap-3 min-[900px]:flex">
-          <ThemeToggle />
-          <Link
-            href="/login?mode=signup"
-            className="btn-uiverse-arrow text-xs font-bold py-2 px-4.5"
-          >
-            <span>Get Started</span>
-            <div className="arrow-wrapper">
-              <div className="arrow" />
-            </div>
-          </Link>
-        </div>
+        {/* Right: the bell once, then the breakpoint-specific controls */}
+        <div className="flex items-center gap-2 min-[900px]:gap-3">
+          {isAuthenticated && <NotificationBell />}
 
-        {/* Mobile menu button (< 900px) */}
-        <div className="flex items-center gap-2 min-[900px]:hidden">
-          <ThemeToggle />
-          <button
-            aria-label="Toggle menu"
-            aria-expanded={open}
-            className="grid h-9 w-9 place-items-center rounded-full bg-purple-100/60 text-purple-900 dark:bg-slate-800 dark:text-purple-300 transition-colors"
-            onClick={() => setOpen((o) => !o)}
-          >
-            {open ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
-          </button>
+          {/* Desktop: auth controls + theme toggle */}
+          <div className="hidden items-center gap-3 min-[900px]:flex">
+            <ThemeToggle />
+            {isAuthenticated ? (
+              <div className="relative" ref={authRef}>
+                <button
+                  type="button"
+                  aria-label="Account menu"
+                  aria-expanded={authMenuOpen}
+                  onClick={() => setAuthMenuOpen((o) => !o)}
+                  className="flex items-center gap-2 rounded-full bg-gradient-to-tr from-purple-600 to-indigo-500 p-1 pr-3 text-white shadow-md shadow-purple-600/30 transition hover:brightness-110"
+                >
+                  <span className="grid h-8 w-8 place-items-center rounded-full bg-white/20 text-sm font-extrabold">
+                    {userInitials}
+                  </span>
+                  <span className="hidden max-w-[9rem] truncate text-sm font-semibold lg:block">
+                    {userName || "My Account"}
+                  </span>
+                  <ChevronDown className={cn("h-3.5 w-3.5 transition-transform duration-200", authMenuOpen && "rotate-180")} />
+                </button>
+
+                {authMenuOpen && (
+                  <div className="absolute right-0 top-full mt-3 w-56 overflow-hidden rounded-2xl border border-purple-100 dark:border-slate-800 bg-white dark:bg-slate-900 p-1.5 shadow-2xl animate-fade-up">
+                    {userName && (
+                      <div className="border-b border-gray-100 dark:border-slate-800 px-3.5 py-2.5">
+                        <p className="truncate text-sm font-bold text-gray-900 dark:text-white">{userName}</p>
+                        {profile?.email && (
+                          <p className="truncate text-xs text-gray-400">{profile.email}</p>
+                        )}
+                      </div>
+                    )}
+                    <Link
+                      href="/dashboard"
+                      onClick={() => setAuthMenuOpen(false)}
+                      className="flex items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-slate-800"
+                    >
+                      <LayoutDashboard className="h-4 w-4 text-purple-500" />
+                      Dashboard
+                    </Link>
+                    {isAdmin && (
+                      <Link
+                        href="/admin"
+                        onClick={() => setAuthMenuOpen(false)}
+                        className="flex items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-slate-800"
+                      >
+                        <ShieldCheck className="h-4 w-4 text-purple-500" />
+                        Admin
+                      </Link>
+                    )}
+                    <button
+                      type="button"
+                      onClick={handleLogout}
+                      className="flex w-full items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm font-medium text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/40"
+                    >
+                      <LogOut className="h-4 w-4" />
+                      Log out
+                    </button>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <>
+                <Link
+                  href="/login"
+                  className="rounded-full px-3.5 py-2 text-xs font-bold text-slate-600 dark:text-slate-300 transition-colors hover:text-purple-700 dark:hover:text-purple-300"
+                >
+                  Sign in
+                </Link>
+                <Link
+                  href="/login?mode=signup"
+                  className="btn-uiverse-arrow text-xs font-bold py-2 px-4.5"
+                >
+                  <span>Get Started</span>
+                  <div className="arrow-wrapper">
+                    <div className="arrow" />
+                  </div>
+                </Link>
+              </>
+            )}
+          </div>
+
+          {/* Mobile menu button (< 900px) */}
+          <div className="flex items-center gap-2 min-[900px]:hidden">
+            <ThemeToggle />
+            <button
+              aria-label="Toggle menu"
+              aria-expanded={open}
+              className="grid h-9 w-9 place-items-center rounded-full bg-purple-100/60 text-purple-900 dark:bg-slate-800 dark:text-purple-300 transition-colors"
+              onClick={() => setOpen((o) => !o)}
+            >
+              {open ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+            </button>
+          </div>
         </div>
       </div>
 
@@ -255,29 +318,60 @@ export function Header() {
                 );
               })}
               <div className="mt-2 grid grid-cols-1 gap-2 border-t border-gray-100 dark:border-slate-800 pt-3">
-                <ButtonLink href="/admission" variant="accent" size="md" className="rounded-full" onClick={() => setOpen(false)}>
-                  <HelpCircle className="h-4 w-4" />
-                  Get Admission Help
-                </ButtonLink>
-                <div className="flex gap-2">
-                  <Link
-                    href="/login"
-                    onClick={() => setOpen(false)}
-                    className="flex-1 inline-flex h-11 items-center justify-center rounded-2xl bg-purple-100/60 dark:bg-slate-800 text-sm font-bold text-purple-900 dark:text-purple-300"
-                  >
-                    Sign in
-                  </Link>
-                  <Link
-                    href="/login?mode=signup"
-                    onClick={() => setOpen(false)}
-                    className="btn-uiverse-arrow flex-1 justify-center py-2.5 text-sm font-bold"
-                  >
-                    <span>Create account</span>
-                    <div className="arrow-wrapper">
-                      <div className="arrow" />
+                {isAuthenticated ? (
+                  <>
+                    <ButtonLink href="/dashboard" variant="accent" size="md" className="rounded-full" onClick={() => setOpen(false)}>
+                      <LayoutDashboard className="h-4 w-4" />
+                      My Dashboard
+                    </ButtonLink>
+                    <div className="flex gap-2">
+                      {isAdmin && (
+                        <Link
+                          href="/admin"
+                          onClick={() => setOpen(false)}
+                          className="flex-1 inline-flex h-11 items-center justify-center gap-2 rounded-2xl bg-purple-100/60 dark:bg-slate-800 text-sm font-bold text-purple-900 dark:text-purple-300"
+                        >
+                          <ShieldCheck className="h-4 w-4" />
+                          Admin
+                        </Link>
+                      )}
+                      <button
+                        type="button"
+                        onClick={handleLogout}
+                        className="flex-1 inline-flex h-11 items-center justify-center gap-2 rounded-2xl bg-red-50 dark:bg-red-950/40 text-sm font-bold text-red-600 dark:text-red-400"
+                      >
+                        <LogOut className="h-4 w-4" />
+                        Log out
+                      </button>
                     </div>
-                  </Link>
-                </div>
+                  </>
+                ) : (
+                  <>
+                    <ButtonLink href="/admission" variant="accent" size="md" className="rounded-full" onClick={() => setOpen(false)}>
+                      <HelpCircle className="h-4 w-4" />
+                      Get Admission Help
+                    </ButtonLink>
+                    <div className="flex gap-2">
+                      <Link
+                        href="/login"
+                        onClick={() => setOpen(false)}
+                        className="flex-1 inline-flex h-11 items-center justify-center rounded-2xl bg-purple-100/60 dark:bg-slate-800 text-sm font-bold text-purple-900 dark:text-purple-300"
+                      >
+                        Sign in
+                      </Link>
+                      <Link
+                        href="/login?mode=signup"
+                        onClick={() => setOpen(false)}
+                        className="btn-uiverse-arrow flex-1 justify-center py-2.5 text-sm font-bold"
+                      >
+                        <span>Create account</span>
+                        <div className="arrow-wrapper">
+                          <div className="arrow" />
+                        </div>
+                      </Link>
+                    </div>
+                  </>
+                )}
               </div>
             </nav>
           </div>

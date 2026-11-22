@@ -14,13 +14,14 @@ import {
   ListChecks,
 } from "lucide-react";
 import {
-  getCourseBySlug,
   getCourseDetail,
   getRelatedCourses,
   collegesOffering,
-  COURSES,
 } from "@/lib/data/courses";
+import { resolveColleges, resolveCourse, resolveCourses, resolveSlugs } from "@/lib/content";
 import { formatINR } from "@/lib/utils";
+import { JsonLd } from "@/components/seo/JsonLd";
+import { breadcrumbLd, ldGraph, ogImage, pageMetadata } from "@/lib/seo";
 import { Badge } from "@/components/ui/Badge";
 import { ButtonLink } from "@/components/ui/Button";
 import { SectionHeading } from "@/components/ui/SectionHeading";
@@ -31,18 +32,32 @@ interface PageProps {
   params: Promise<{ slug: string }>;
 }
 
-export function generateStaticParams() {
-  return COURSES.map((c) => ({ slug: c.slug }));
+/** Seed set only; the rest render on demand and are cached by ISR. */
+const PRERENDER_SEED = 25;
+
+export async function generateStaticParams() {
+  const slugs = await resolveSlugs("courses", PRERENDER_SEED);
+  return slugs.map((slug) => ({ slug }));
 }
 
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
   const { slug } = await params;
-  const course = getCourseBySlug(slug);
-  if (!course) return { title: "Course not found" };
-  return {
+  const { data: course } = await resolveCourse(slug);
+  if (!course) {
+    return pageMetadata({
+      title: "Course not found",
+      description: "This course is not in the padhaanewala catalogue.",
+      path: `/courses/${slug}`,
+      noindex: true,
+    });
+  }
+  return pageMetadata({
     title: `${course.name} — Course Details`,
     description: course.description,
-  };
+    path: `/courses/${course.slug}`,
+    type: "article",
+    image: ogImage(`${course.name} — duration, fees and eligibility`),
+  });
 }
 
 function FaqList({ faqs }: { faqs: { q: string; a: string }[] }) {
@@ -63,14 +78,36 @@ function FaqList({ faqs }: { faqs: { q: string; a: string }[] }) {
 
 export default async function CourseDetailPage({ params }: PageProps) {
   const { slug } = await params;
-  const course = getCourseBySlug(slug);
+  const [{ data: course }, { data: catalog }, { data: collegeDataset }] = await Promise.all([
+    resolveCourse(slug),
+    resolveCourses(),
+    resolveColleges(),
+  ]);
   if (!course) notFound();
   const detail = getCourseDetail(slug);
-  const colleges = collegesOffering(slug).slice(0, 6);
-  const related = getRelatedCourses(slug);
+  const colleges = collegesOffering(slug, collegeDataset, catalog).slice(0, 6);
+  const related = getRelatedCourses(slug, catalog);
+
+  /**
+   * Breadcrumb only. `courseLd()` takes a `Course` — the record embedded in a
+   * college profile, which carries a `specialization` and a per-year fee. This
+   * route resolves a `CourseMeta` (a catalogue row: name, level, duration, one
+   * averaged fee) and a `CourseDetailMeta`, and neither is that shape. Emitting
+   * a `Course` node from a partial object would mean asserting fields the
+   * database never sent, which is the failure mode structured data exists to
+   * avoid, so the node is left off until the resolver returns a real `Course`.
+   */
+  const jsonLd = ldGraph([
+    breadcrumbLd([
+      { name: "Home", path: "/" },
+      { name: "Courses", path: "/courses" },
+      { name: course.name, path: `/courses/${course.slug}` },
+    ]),
+  ]);
 
   return (
     <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8 lg:py-12">
+      <JsonLd data={jsonLd} />
       <nav className="mb-5 flex items-center gap-1.5 text-xs text-slate-400">
         <Link href="/" className="hover:text-purple-700">Home</Link>
         <ChevronRight className="h-3.5 w-3.5" />
@@ -259,8 +296,8 @@ export default async function CourseDetailPage({ params }: PageProps) {
         <ButtonLink href="/courses" variant="ghost" size="sm">
           <ArrowLeft className="h-4 w-4" /> Back to all courses
         </ButtonLink>
-        <ButtonLink href="/college-predictor" variant="accent" size="md">
-          Predict my college <CalendarDays className="h-4 w-4" />
+        <ButtonLink href="/admission" variant="accent" size="md">
+          Get admission help <CalendarDays className="h-4 w-4" />
         </ButtonLink>
       </div>
 

@@ -10,7 +10,10 @@ import {
   ChevronRight,
   Building2,
 } from "lucide-react";
-import { getExamBySlug, EXAM_STAGES, EXAMS } from "@/lib/data/exams";
+import { EXAM_STAGES } from "@/lib/data/exams";
+import { resolveExam, resolveSlugs } from "@/lib/content";
+import { JsonLd } from "@/components/seo/JsonLd";
+import { breadcrumbLd, eventLd, faqPageLd, ldGraph, ogImage, pageMetadata } from "@/lib/seo";
 import {
   ExamFaqs,
   ExamImportantDates,
@@ -25,36 +28,49 @@ interface PageProps {
   params: Promise<{ slug: string }>;
 }
 
-export function generateStaticParams() {
-  return EXAMS.map((e) => ({ slug: e.slug }));
+export async function generateStaticParams() {
+  const slugs = await resolveSlugs("exams");
+  return slugs.map((slug) => ({ slug }));
 }
 
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
   const { slug } = await params;
-  const exam = getExamBySlug(slug);
-  if (!exam) return { title: "Exam not found" };
-  return {
+  const { data: exam } = await resolveExam(slug);
+  if (!exam) {
+    return pageMetadata({
+      title: "Exam not found",
+      description: "This entrance exam is not in the padhaanewala catalogue.",
+      path: `/exams/${slug}`,
+      noindex: true,
+    });
+  }
+  return pageMetadata({
     title: `${exam.shortName} — Exam Details`,
     description: `${exam.shortName} (${exam.name}): eligibility, application dates, exam pattern, fees and FAQs. Conducted by ${exam.conductingBody}.`,
-  };
+    path: `/exams/${exam.slug}`,
+    type: "article",
+    image: ogImage(`${exam.shortName} — dates, pattern and eligibility`),
+  });
 }
 
 export default async function ExamDetailPage({ params }: PageProps) {
   const { slug } = await params;
-  const exam = getExamBySlug(slug);
+  const { data: exam } = await resolveExam(slug);
   if (!exam) notFound();
 
-  const jsonLd = {
-    "@context": "https://schema.org",
-    "@type": "EducationalOccupationalProgram",
-    name: exam.name,
-    description: exam.overview,
-    educationalLevel: exam.level === "UG" ? "Undergraduate" : "Postgraduate",
-  };
+  const jsonLd = ldGraph([
+    eventLd(exam),
+    breadcrumbLd([
+      { name: "Home", path: "/" },
+      { name: "Exams", path: "/exams" },
+      { name: exam.shortName, path: `/exams/${exam.slug}` },
+    ]),
+    faqPageLd(exam.faqs ?? []),
+  ]);
 
   return (
     <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8 lg:py-12">
-      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
+      <JsonLd data={jsonLd} />
 
       <nav className="mb-5 flex items-center gap-1.5 text-xs text-slate-400">
         <Link href="/" className="hover:text-purple-700">Home</Link>
@@ -64,9 +80,28 @@ export default async function ExamDetailPage({ params }: PageProps) {
         <span className="font-medium text-purple-700">{exam.shortName}</span>
       </nav>
 
-      {/* Hero */}
-      <div className="overflow-hidden rounded-3xl border border-purple-100 bg-gradient-to-r from-purple-700 via-indigo-700 to-purple-800 p-6 text-white sm:p-10">
-        <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
+      {/* Hero. With an uploaded image it becomes that image behind a scrim;
+          without one it is the purple gradient, unchanged. The content block is
+          `relative z-10` so the text always sits above either background. */}
+      <div className="relative isolate overflow-hidden rounded-3xl border border-purple-100 bg-gradient-to-r from-purple-700 via-indigo-700 to-purple-800 p-6 text-white sm:p-10">
+        {exam.imageUrl ? (
+          <>
+            {/* eslint-disable-next-line @next/next/no-img-element -- the URL is
+                same-origin media (`img-src 'self'`) or an admin-supplied host
+                listed in CSP_IMAGE_HOSTS; neither can be a build-time allowlist. */}
+            <img
+              src={exam.imageUrl}
+              alt=""
+              loading="lazy"
+              decoding="async"
+              className="absolute inset-0 -z-10 h-full w-full object-cover"
+            />
+            {/* A strong scrim, because the overlay carries the page's <h1> and
+                has to stay readable against an arbitrary upload. */}
+            <div className="absolute inset-0 -z-10 bg-gradient-to-r from-purple-950/90 via-purple-900/70 to-indigo-900/50" />
+          </>
+        ) : null}
+        <div className="relative z-10 flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
           <div>
             <Badge variant="yellow">{exam.stage}</Badge>
             <h1 className="mt-3 font-display text-3xl font-extrabold tracking-tight sm:text-4xl">

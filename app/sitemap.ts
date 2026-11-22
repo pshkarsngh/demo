@@ -1,59 +1,61 @@
 import type { MetadataRoute } from "next";
-import { COLLEGES } from "@/lib/data/colleges";
-import { COURSES } from "@/lib/data/courses";
-import { EXAMS } from "@/lib/data/exams";
-import { BLOG_POSTS } from "@/lib/data/blog";
+import { SITE_URL } from "@/lib/site";
+import { resolveSlugs } from "@/lib/content";
+import { LEGAL_NAV } from "@/lib/legal";
+import { SITEMAP_PAGES, SITEMAP_SLUG_SECTIONS, isBetaHidden, isNoindex, type ChangeFrequency } from "@/lib/nav";
 
-const BASE = process.env.NEXT_PUBLIC_SITE_URL ?? "https://campuspulse.in";
+export const revalidate = 3600;
 
-export default function sitemap(): MetadataRoute.Sitemap {
+/**
+ * Sitemap is generated from the page manifest plus live catalogue slugs (API
+ * first, bundled fallback), so newly published colleges/exams/posts appear
+ * without a code change, and de-listing a route is a one-line change in
+ * `lib/nav.ts` rather than an edit here.
+ *
+ * Every source is filtered through both `isBetaHidden` and `isNoindex`. The
+ * filters are applied at read time rather than trusted to the manifest being kept
+ * in sync, because a route left in the sitemap while carrying `noindex` is a
+ * direct contradiction — the sitemap says "index this" and the page says "do
+ * not" — and `/login` shipped exactly that way.
+ */
+export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const now = new Date().toISOString();
-  const collegePages = COLLEGES.map((c) => ({
-    url: `${BASE}/colleges/${c.slug}`,
+  const excluded = (path: string) => isBetaHidden(path) || isNoindex(path);
+
+  const slugsBySection = new Map<string, string[]>();
+  await Promise.all(
+    SITEMAP_SLUG_SECTIONS.map(async ({ section }) => {
+      slugsBySection.set(section, await resolveSlugs(section));
+    }),
+  );
+
+  const page = (path: string, changeFrequency: ChangeFrequency, priority: number) => ({
+    url: `${SITE_URL}${path}`,
     lastModified: now,
-    changeFrequency: "monthly" as const,
-    priority: 0.8,
-  }));
-  const coursePages = COURSES.map((c) => ({
-    url: `${BASE}/courses/${c.slug}`,
-    lastModified: now,
-    changeFrequency: "monthly" as const,
-    priority: 0.7,
-  }));
-  const examPages = EXAMS.map((e) => ({
-    url: `${BASE}/exams/${e.slug}`,
-    lastModified: now,
-    changeFrequency: "weekly" as const,
-    priority: 0.7,
-  }));
-  const blogPages = BLOG_POSTS.map((p) => ({
-    url: `${BASE}/blog/${p.slug}`,
-    lastModified: now,
-    changeFrequency: "monthly" as const,
-    priority: 0.6,
-  }));
+    changeFrequency,
+    priority,
+  });
+
+  const staticPages = SITEMAP_PAGES.filter((p) => !excluded(p.path)).map((p) =>
+    page(p.path, p.changeFrequency, p.priority),
+  );
+
+  const detailPages = SITEMAP_SLUG_SECTIONS.flatMap(({ section, pathPrefix, changeFrequency, priority }) =>
+    (slugsBySection.get(section) ?? [])
+      .map((slug) => `${pathPrefix}/${slug}`)
+      .filter((path) => !excluded(path))
+      .map((path) => page(path, changeFrequency, priority)),
+  );
 
   return [
-    { url: BASE, lastModified: now, changeFrequency: "weekly", priority: 1 },
-    { url: `${BASE}/colleges`, lastModified: now, changeFrequency: "weekly", priority: 0.9 },
-    ...collegePages,
-    { url: `${BASE}/courses`, lastModified: now, changeFrequency: "weekly", priority: 0.7 },
-    ...coursePages,
-    { url: `${BASE}/college-predictor`, lastModified: now, changeFrequency: "monthly", priority: 0.8 },
-    { url: `${BASE}/compare`, lastModified: now, changeFrequency: "monthly", priority: 0.6 },
-    { url: `${BASE}/scholarships`, lastModified: now, changeFrequency: "monthly", priority: 0.7 },
-    { url: `${BASE}/exams`, lastModified: now, changeFrequency: "weekly", priority: 0.7 },
-    ...examPages,
-    { url: `${BASE}/mock-tests`, lastModified: now, changeFrequency: "weekly", priority: 0.6 },
-    { url: `${BASE}/reviews`, lastModified: now, changeFrequency: "monthly", priority: 0.5 },
-    { url: `${BASE}/blog`, lastModified: now, changeFrequency: "weekly", priority: 0.6 },
-    ...blogPages,
-    { url: `${BASE}/ask-ai`, lastModified: now, changeFrequency: "monthly", priority: 0.6 },
-    { url: `${BASE}/admission`, lastModified: now, changeFrequency: "monthly", priority: 0.6 },
-    { url: `${BASE}/resources`, lastModified: now, changeFrequency: "monthly", priority: 0.5 },
-    { url: `${BASE}/contact`, lastModified: now, changeFrequency: "yearly", priority: 0.3 },
-    { url: `${BASE}/about`, lastModified: now, changeFrequency: "yearly", priority: 0.3 },
-    { url: `${BASE}/login`, lastModified: now, changeFrequency: "yearly", priority: 0.3 },
-    { url: `${BASE}/dashboard`, lastModified: now, changeFrequency: "monthly", priority: 0.4 },
+    ...staticPages,
+    ...detailPages,
+    // Legal documents are driven by the same registry as /legal/[slug], so a
+    // new document appears here without a second edit.
+    ...LEGAL_NAV.filter((entry) => !excluded(entry.href)).map((entry) =>
+      page(entry.href, "yearly", 0.2),
+    ),
+    // /dashboard and /admin are intentionally absent — both are noindex, and
+    // both are in ROBOTS_DISALLOW.
   ];
 }

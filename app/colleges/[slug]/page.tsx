@@ -1,72 +1,107 @@
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
-import { getCollegeBySlug, COLLEGES } from "@/lib/data/colleges";
 import { formatINR } from "@/lib/utils";
+import { resolveCollege, resolveColleges, resolveSlugs } from "@/lib/content";
+import { getSimilarColleges } from "@/lib/data/colleges";
+import { JsonLd } from "@/components/seo/JsonLd";
+import {
+  breadcrumbLd,
+  collegeLd,
+  faqPageLd,
+  ldGraph,
+  ogImage,
+  pageMetadata,
+} from "@/lib/seo";
 import CollegeDetailContent from "@/components/college/CollegeDetailContent";
 
 interface PageProps {
   params: Promise<{ slug: string }>;
 }
 
+/**
+ * Only a seed set is prerendered. The catalogue is 341 colleges today with a
+ * 1000+ target, and each of these pages fans out to `getCollegeBundle` (9
+ * requests) plus the full college list for the "similar colleges" section.
+ * Prerendering all of them made the build exceed the 60s per-page budget and
+ * exit non-zero. Anything not listed here is still generated on first request
+ * and cached (`dynamicParams` defaults to true), and `app/sitemap.ts` calls
+ * `resolveSlugs` without a limit so every college stays discoverable.
+ */
+const PRERENDER_SEED = 25;
+
 export async function generateStaticParams() {
-  return COLLEGES.map((c) => ({ slug: c.slug }));
+  const slugs = await resolveSlugs("colleges", PRERENDER_SEED);
+  return slugs.map((slug) => ({ slug }));
 }
 
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
   const { slug } = await params;
-  const college = getCollegeBySlug(slug);
-  if (!college) return { title: "College not found" };
-  const minFee = Math.min(...college.courses.map((c) => c.feePerYear));
-  return {
+  const { data: college } = await resolveCollege(slug);
+  if (!college) {
+    return pageMetadata({
+      title: "College not found",
+      description: "This college is not in the padhaanewala catalogue.",
+      path: `/colleges/${slug}`,
+      noindex: true,
+    });
+  }
+
+  const fees = college.courses.map((c) => c.feePerYear).filter((f) => f > 0);
+  const minFee = fees.length ? Math.min(...fees) : 0;
+
+  const description = [
+    `${college.shortName} in ${college.city}, ${college.state}.`,
+    college.rating > 0
+      ? `Rated ${college.rating}/5 from ${college.reviewCount} reviews.`
+      : "",
+    minFee > 0 ? `Approx fee ${formatINR(minFee)} per year.` : "",
+    college.placement.placementRate > 0
+      ? `${college.placement.placementRate}% placement rate.`
+      : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+
+  return pageMetadata({
     title: college.name,
-    description: `${college.shortName} in ${college.city}, ${college.state}. Rated ${college.rating}/5. Approx fee ${formatINR(minFee)} per year. ${college.placement.placementRate}% placement rate. Compare on CampusPulse.`,
-    openGraph: {
-      title: `${college.name} — CampusPulse`,
-      description: `Explore ${college.shortName}: courses, fees, placements, reviews and more on CampusPulse.`,
-      type: "article",
-      siteName: "CampusPulse",
-      images: [],
-    },
-  };
+    description,
+    path: `/colleges/${college.slug}`,
+    // `article` rather than `website`: a college page is a standalone document
+    // about one entity, and the `article:*` tags it enables are what the card
+    // preview uses for a publish date.
+    type: "article",
+    image: ogImage(`${college.name} — courses, fees and placements`),
+  });
 }
 
 export default async function Page({ params }: PageProps) {
   const { slug } = await params;
-  const college = getCollegeBySlug(slug);
+  const [{ data: college }, { data: dataset }] = await Promise.all([
+    resolveCollege(slug),
+    resolveColleges(),
+  ]);
   if (!college) notFound();
 
-  const jsonLd = {
-    "@context": "https://schema.org",
-    "@type": "CollegeOrUniversity",
-    name: college.name,
-    description: college.overview,
-    url: `https://campuspulse.in/colleges/${college.slug}`,
-    address: {
-      "@type": "PostalAddress",
-      addressLocality: college.city,
-      addressRegion: college.state,
-      postalCode: college.pincode,
-      addressCountry: "IN",
-    },
-    aggregateRating: {
-      "@type": "AggregateRating",
-      ratingValue: String(college.rating),
-      reviewCount: String(college.reviewCount),
-    },
-    foundingDate: String(college.founded),
-    provider: {
-      "@type": "EducationalOrganization",
-      name: college.name,
-    },
-  };
+  // Similar colleges must come from the same dataset as the college itself,
+  // otherwise an API-backed page ends up recommending bundled records.
+  const similar = getSimilarColleges(college, 3, dataset).filter(
+    (c) => c.slug !== college.slug,
+  );
+
+  const jsonLd = ldGraph([
+    collegeLd(college),
+    breadcrumbLd([
+      { name: "Home", path: "/" },
+      { name: "Colleges", path: "/colleges" },
+      { name: college.name, path: `/colleges/${college.slug}` },
+    ]),
+    faqPageLd(college.faqs ?? []),
+  ]);
 
   return (
     <>
-      <script
-        type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
-      />
-      <CollegeDetailContent college={college} />
+      <JsonLd data={jsonLd} />
+      <CollegeDetailContent college={college} similar={similar} />
     </>
   );
 }

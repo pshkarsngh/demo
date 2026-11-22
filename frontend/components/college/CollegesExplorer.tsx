@@ -1,45 +1,80 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState, Suspense } from "react";
+import { useCallback, useEffect, useMemo, useState, useSyncExternalStore, Suspense } from "react";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
-import type { SearchFilters, SortKey } from "@/lib/types";
-import { searchColleges, PAGE_SIZE } from "@/lib/data";
+import type { College, SearchFilters, SortKey } from "@/lib/types";
+import { searchColleges, buildFacets, searchTokens, PAGE_SIZE } from "@/lib/data";
+import { COLLEGES } from "@/lib/data/colleges";
 import { defaultFilters, parseSearchParams, serializeSearch } from "@/lib/searchParams";
 import { CollegeCard } from "@/components/college/CollegeCard";
-import { FiltersPanel } from "@/components/college/FiltersPanel";
+import { FiltersPanel, countActiveFilters } from "@/components/college/FiltersPanel";
 import { SortBar } from "@/components/college/SortBar";
 import { Pagination } from "@/components/college/Pagination";
 import { SearchBar } from "@/components/home/SearchBar";
-import { SkeletonGrid } from "@/components/ui/Skeleton";
 import { EmptyState } from "@/components/ui/EmptyState";
-import { SearchX, X } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { Chip as FilterChip } from "@/components/ui/Chip";
+import { SearchX } from "lucide-react";
+import { cn, debounce } from "@/lib/utils";
 
-function activeFilterCount(f: SearchFilters): number {
-  return (
-    (f.states?.length ?? 0) +
-    (f.cities?.length ?? 0) +
-    (f.courseNames?.length ?? 0) +
-    (f.sectors?.length ?? 0) +
-    (f.types?.length ?? 0) +
-    (f.exams?.length ?? 0) +
-    (f.accreditations?.length ?? 0) +
-    (f.hostel === true ? 1 : 0) +
-    (f.placementRate === true ? 1 : 0) +
-    (f.minFee !== null ? 1 : 0)
-  );
-}
+const subscribeToNothing = () => () => {};
+const getClientSnapshot = () => true;
+const getServerSnapshot = () => false;
 
-export default function CollegesExplorer() {
+export default function CollegesExplorer({
+  colleges: dataset,
+}: {
+  /** College dataset resolved on the server (API, with bundled fallback). */
+  colleges?: College[];
+}) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
 
+  /**
+   * Set only on mobile, and only when the filter drawer is open.
+   *
+   * `updateFilters` used to close the drawer on every change, so each tap on a
+   * filter checkbox slammed it shut and the next one had to reopen it. Now only
+   * an explicit close — the scrim, the ✕, or "Show N results" — closes it.
+   */
+  const [filterOpen, setFilterOpen] = useState(false);
+
+  /**
+   * The drawer is off-canvas (`-translate-x-full`) until opened, so rendering it
+   * during SSR buys nothing and costs hydration robustness: browser extensions
+   * that attach helpers to dialogs and form controls (TextBlaze injects
+   * `<text-blaze-app-reference>`) mutate this subtree between the server HTML
+   * and React's hydration pass, which React reports as a hydration mismatch.
+   * Rendering it only after mount keeps the extension's edits on the client side
+   * of that boundary.
+   *
+   * `useSyncExternalStore` rather than a `mounted` flag set in an effect: the
+   * server snapshot is `false` and the client snapshot is `true`, so React swaps
+   * it in after hydration without a cascading render (the lint rules reject
+   * setState in an effect body for exactly that reason).
+   */
+  const mounted = useSyncExternalStore(
+    subscribeToNothing,
+    getClientSnapshot,
+    getServerSnapshot,
+  );
+
+  const colleges = useMemo(() => dataset?.length ? dataset : COLLEGES, [dataset]);
+  const facets = useMemo(() => buildFacets(colleges), [colleges]);
+
   const initial = useMemo(() => parseSearchParams(searchParams), [searchParams]);
   const [filters, setFilters] = useState<SearchFilters>(initial.filters);
   const [page, setPage] = useState(initial.page);
-  const [filterOpen, setFilterOpen] = useState(false);
-  const [loading, setLoading] = useState(true);
+
+  // Re-read filters when the URL changes (browser back/forward). This is React's
+  // documented "adjust state when a prop changes" pattern — the comparison and
+  // reset happen during render, so no effect and no cascading render is needed.
+  const [lastUrlState, setLastUrlState] = useState(initial);
+  if (lastUrlState !== initial) {
+    setLastUrlState(initial);
+    setFilters(initial.filters);
+    setPage(initial.page);
+  }
 
   // keep URL in sync
   const syncUrl = useCallback(
@@ -50,21 +85,40 @@ export default function CollegesExplorer() {
     [pathname, router],
   );
 
-  // initial simulated loading for skeleton polish
-  useEffect(() => {
-    const t = setTimeout(() => setLoading(false), 500);
-    return () => clearTimeout(t);
-  }, []);
+  /**
+   * Push the query to the URL on a pause in typing.
+   *
+   * `updateFilters` writes the URL synchronously, which is right for a checkbox
+   * and wrong for a keystroke: typing a five-letter query would fire five
+   * `router.replace` calls, each re-rendering the route segment. The grid itself
+   * filters off local state and stays instant; only the URL lags, by 300ms.
+   *
+   * Keyed on `[pathname, router]` and given the finished filter set as an
+   * argument. It used to be keyed on `[filters, ...]` with the query as the
+   * argument, which meant a brand new debouncer — with a brand new private
+   * timer — on every keystroke. Nothing could cancel the previous one, so the
+   * three keystrokes of "Mys" queued three `router.replace` calls and the
+   * "debounce" wrote to the URL three times, each with the filter state as it
+   * stood at that keystroke.
+   */
+  const syncQuerySoon = useMemo(
+    () =>
+      debounce((q: string) => {
+        const qs = serializeSearch({ ...filters, query: q }, 1);
+        router.replace(`${pathname}${qs ? `?${qs}` : ""}`, { scroll: false });
+      }, 300),
+    [pathname, router, filters],
+  );
+
+  // An unmount must not leave a timer holding a stale `router` and `pathname`.
+  useEffect(() => () => syncQuerySoon.cancel(), [syncQuerySoon]);
 
   const updateFilters = useCallback(
     (patch: Partial<SearchFilters>) => {
-      setFilterOpen(false);
       const next = { ...filters, ...patch };
       setFilters(next);
       setPage(1);
       syncUrl(next, 1);
-      setLoading(true);
-      window.setTimeout(() => setLoading(false), 300);
     },
     [filters, syncUrl],
   );
@@ -76,27 +130,30 @@ export default function CollegesExplorer() {
     (p: number) => {
       setPage(p);
       syncUrl(filters, p);
-      setLoading(true);
-      window.setTimeout(() => setLoading(false), 250);
       window.scrollTo({ top: 0, behavior: "smooth" });
     },
     [filters, syncUrl],
   );
 
-  const { colleges, total } = useMemo(() => searchColleges(filters, page), [filters, page]);
+  const { colleges: results, total } = useMemo(
+    () => searchColleges(filters, page, colleges),
+    [filters, page, colleges],
+  );
 
-  const activeCount = activeFilterCount(filters);
-  const hasActiveFilters = activeCount > 0 || Boolean(filters.query);
+  const activeCount = countActiveFilters(filters);
+  // `searchTokens` rather than `Boolean(query)`: a whitespace-only `?q=%20%20`
+  // was truthy, so the chip row and "Clear all" appeared with nothing applied.
+  const hasActiveFilters = activeCount > 0 || searchTokens(filters.query).length > 0;
 
   return (
     <div>
       {/* header band */}
-      <section className="relative isolate overflow-hidden bg-gradient-to-br from-purple-100/70 via-white to-blue-50/70 dark:from-purple-950/60 dark:via-slate-900 dark:to-blue-950/60 dark:border-b dark:border-purple-900/40">
-        <div className="pointer-events-none absolute inset-0 -z-10">
+      <section className="relative z-30 bg-gradient-to-br from-purple-100/70 via-white to-blue-50/70 dark:from-purple-950/60 dark:via-slate-900 dark:to-blue-950/60 dark:border-b dark:border-purple-900/40">
+        <div className="pointer-events-none absolute inset-0 -z-10 overflow-hidden">
           <div className="absolute -left-16 -top-20 h-72 w-72 rounded-full bg-purple-400/20 blur-3xl" />
           <div className="absolute -right-10 -top-10 h-64 w-64 rounded-full bg-orange-300/20 blur-3xl" />
         </div>
-        <div className="mx-auto max-w-7xl px-4 py-10 sm:px-6 lg:px-8">
+        <div className="mx-auto max-w-7xl px-4 pt-28 pb-10 sm:px-6 sm:pt-32 lg:px-8 lg:pt-36">
           <h1 className="font-display text-3xl font-extrabold tracking-tight text-purple-950 dark:text-white sm:text-4xl">
             Explore Colleges
           </h1>
@@ -104,17 +161,25 @@ export default function CollegesExplorer() {
             Search by name, course, city or specialization and refine with
             powerful filters.
           </p>
-          <div className="mt-5 max-w-2xl">
+          <div className="relative z-30 mt-5 max-w-2xl">
             <SearchBar
               initial={filters.query}
               id="colleges-search"
-              onSearch={() => setLoading(true)}
+              colleges={colleges}
+              facets={facets}
+              onChange={(q) => {
+                // Local state first so the grid responds on the keystroke, URL
+                // on the debounce.
+                setFilters((prev) => ({ ...prev, query: q }));
+                setPage(1);
+                syncQuerySoon(q);
+              }}
             />
           </div>
         </div>
       </section>
 
-      <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+      <div className="relative z-10 mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
         <div className="flex gap-8">
           {/* desktop sidebar */}
           <aside className="hidden w-72 shrink-0 lg:block">
@@ -123,6 +188,7 @@ export default function CollegesExplorer() {
                 filters={filters}
                 onChange={updateFilters}
                 onClear={clearAll}
+                facets={facets}
               />
             </div>
           </aside>
@@ -131,7 +197,7 @@ export default function CollegesExplorer() {
           <div className="min-w-0 flex-1">
             <SortBar
               total={total}
-              shown={Math.min(colleges.length, PAGE_SIZE)}
+              shown={Math.min(results.length, PAGE_SIZE)}
               sortBy={filters.sortBy}
               onSort={updateSort}
               activeFilters={activeCount}
@@ -141,29 +207,31 @@ export default function CollegesExplorer() {
             {/* active chips */}
             {hasActiveFilters && (
               <div className="mt-4 flex flex-wrap items-center gap-1.5">
-                {filters.query && (
-                  <Chip pill value={filters.query} onRemove={() => updateFilters({ query: "" })} />
+                {searchTokens(filters.query).length > 0 && (
+                  <FilterChip pill onRemove={() => updateFilters({ query: "" })}>{filters.query}</FilterChip>
                 )}
                 {(filters.states ?? []).map((s) => (
-                  <Chip key={s} pill value={s} onRemove={() => updateFilters({ states: filters.states.filter((x) => x !== s) })} />
+                  <FilterChip key={s} pill onRemove={() => updateFilters({ states: filters.states.filter((x) => x !== s) })}>{s}</FilterChip>
                 ))}
                 {(filters.cities ?? []).map((s) => (
-                  <Chip key={s} pill value={s} onRemove={() => updateFilters({ cities: filters.cities.filter((x) => x !== s) })} />
+                  <FilterChip key={s} pill onRemove={() => updateFilters({ cities: filters.cities.filter((x) => x !== s) })}>{s}</FilterChip>
                 ))}
                 {(filters.courseNames ?? []).map((s) => (
-                  <Chip key={s} pill value={`Degree: ${s}`} onRemove={() => updateFilters({ courseNames: filters.courseNames.filter((x) => x !== s) })} />
+                  <FilterChip key={s} pill onRemove={() => updateFilters({ courseNames: filters.courseNames.filter((x) => x !== s) })}>{`Degree: ${s}`}</FilterChip>
                 ))}
                 {(filters.types ?? []).map((s) => (
-                  <Chip key={s} pill value={s} onRemove={() => updateFilters({ types: filters.types.filter((x) => x !== s) })} />
+                  <FilterChip key={s} pill onRemove={() => updateFilters({ types: filters.types.filter((x) => x !== s) })}>{s}</FilterChip>
                 ))}
                 {(filters.exams ?? []).map((s) => (
-                  <Chip key={s} pill value={s} onRemove={() => updateFilters({ exams: filters.exams.filter((x) => x !== s) })} />
+                  <FilterChip key={s} pill onRemove={() => updateFilters({ exams: filters.exams.filter((x) => x !== s) })}>{s}</FilterChip>
                 ))}
                 {filters.hostel === true && (
-                  <Chip pill value="Hostel" onRemove={() => updateFilters({ hostel: null })} />
+                  <FilterChip pill onRemove={() => updateFilters({ hostel: null })}>Hostel</FilterChip>
                 )}
                 {filters.placementRate === true && (
-                  <Chip pill value="85%+ placement" onRemove={() => updateFilters({ placementRate: null })} />
+                  <FilterChip pill onRemove={() => updateFilters({ placementRate: null })}>
+                    85%+ placement
+                  </FilterChip>
                 )}
                 <button
                   onClick={clearAll}
@@ -175,9 +243,7 @@ export default function CollegesExplorer() {
             )}
 
             <div className="mt-5">
-              {loading ? (
-                <SkeletonGrid count={6} />
-              ) : colleges.length === 0 ? (
+              {results.length === 0 ? (
                 <EmptyState
                   icon={SearchX}
                   title="No colleges match your filters"
@@ -186,11 +252,18 @@ export default function CollegesExplorer() {
                   actionLabel="Reset all filters"
                 />
               ) : (
-                <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
-                  {colleges.map((college) => (
-                    <CollegeCard key={college.id} college={college} />
-                  ))}
-                </div>
+                <>
+                  {total > results.length && (
+                    <p className="mb-4 text-xs text-gray-500 dark:text-slate-400">
+                      Showing {(page - 1) * PAGE_SIZE + 1}–{(page - 1) * PAGE_SIZE + results.length} of {total}
+                    </p>
+                  )}
+                  <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+                    {results.map((college) => (
+                      <CollegeCard key={college.id} college={college} />
+                    ))}
+                  </div>
+                </>
               )}
             </div>
 
@@ -204,70 +277,44 @@ export default function CollegesExplorer() {
         </div>
       </div>
 
-      {/* mobile filter drawer */}
-      <Suspense fallback={null}>
-        <div
-          aria-hidden={!filterOpen}
-          className={cn(
-            "fixed inset-0 z-[80] lg:hidden",
-            filterOpen ? "pointer-events-auto" : "pointer-events-none",
-          )}
-        >
-          <button
-            aria-label="Close filters"
-            onClick={() => setFilterOpen(false)}
-            className={cn(
-              "absolute inset-0 bg-gray-900/50 backdrop-blur-sm transition-opacity",
-              filterOpen ? "opacity-100" : "opacity-0",
-            )}
-          />
+      {/* mobile filter drawer — client-only, see `mounted` above */}
+      {mounted && (
+        <Suspense fallback={null}>
           <div
-            role="dialog"
-            aria-modal="true"
-            aria-label="Filters"
+            aria-hidden={!filterOpen}
             className={cn(
-              "absolute inset-y-0 left-0 w-[min(22rem,88vw)] bg-white shadow-2xl transition-transform duration-300",
-              filterOpen ? "translate-x-0" : "-translate-x-full",
+              "fixed inset-0 z-[80] lg:hidden",
+              filterOpen ? "pointer-events-auto" : "pointer-events-none",
             )}
           >
-            <FiltersPanel
-              filters={filters}
-              onChange={updateFilters}
-              onClear={clearAll}
-              onClose={() => setFilterOpen(false)}
+            <button
+              aria-label="Close filters"
+              onClick={() => setFilterOpen(false)}
+              className={cn(
+                "absolute inset-0 bg-gray-900/50 backdrop-blur-sm transition-opacity",
+                filterOpen ? "opacity-100" : "opacity-0",
+              )}
             />
+            <div
+              role="dialog"
+              aria-modal="true"
+              aria-label="Filters"
+              className={cn(
+                "absolute inset-y-0 left-0 w-[min(22rem,88vw)] bg-white shadow-2xl transition-transform duration-300",
+                filterOpen ? "translate-x-0" : "-translate-x-full",
+              )}
+            >
+              <FiltersPanel
+                filters={filters}
+                onChange={updateFilters}
+                onClear={clearAll}
+                onClose={() => setFilterOpen(false)}
+                facets={facets}
+              />
+            </div>
           </div>
-        </div>
-      </Suspense>
-
-      {/* hide skeleton flash */}
-      <noscript>{null}</noscript>
-    </div>
-  );
-}
-
-function Chip({
-  pill,
-  value,
-  onRemove,
-}: {
-  pill?: boolean;
-  value: string;
-  onRemove: () => void;
-}) {
-  return (
-    <span
-      className={cn(
-        "inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium ring-1 ring-inset",
-        pill
-          ? "bg-purple-50 text-purple-700 ring-purple-200"
-          : "bg-gray-100 text-gray-600 ring-gray-200",
+        </Suspense>
       )}
-    >
-      {value}
-      <button aria-label={`Remove ${value}`} onClick={onRemove} className="grid h-4 w-4 place-items-center rounded-full hover:bg-purple-100">
-        <X className="h-3 w-3" />
-      </button>
-    </span>
+    </div>
   );
 }

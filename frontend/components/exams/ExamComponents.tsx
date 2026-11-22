@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
 import {
   CalendarDays,
@@ -17,7 +17,7 @@ import {
 import { Badge } from "@/components/ui/Badge";
 import { Input } from "@/components/ui/FormField";
 import { cn, formatDate } from "@/lib/utils";
-import { EXAMS, searchExams, EXAM_STAGES } from "@/lib/data/exams";
+import { searchExams, EXAM_STAGES, EXAMS } from "@/lib/data/exams";
 import type { Exam } from "@/lib/types";
 
 const STAGE_TONE: Record<string, "green" | "yellow" | "red" | "blue"> = {
@@ -59,10 +59,16 @@ export function ExamCard({ exam }: { exam: Exam }) {
           <FileText className="h-3.5 w-3.5 text-purple-500 dark:text-purple-400" />
           {exam.type}
         </span>
-        <span className="flex items-center gap-1.5">
-          <Users className="h-3.5 w-3.5 text-purple-500 dark:text-purple-400" />
-          {exam.coursesAccepted[0]}
-        </span>
+        {/* `coursesAccepted` is `[]` for every exam that came off the API —
+            `mapExam` has no source field for it — so `coursesAccepted[0]` was
+            `undefined` and this cell rendered as a bare Users icon with nothing
+            beside it, on all 40-odd cards. Rendered only when populated. */}
+        {exam.coursesAccepted?.[0] ? (
+          <span className="flex items-center gap-1.5">
+            <Users className="h-3.5 w-3.5 text-purple-500 dark:text-purple-400" />
+            {exam.coursesAccepted[0]}
+          </span>
+        ) : null}
       </div>
 
       <div className="mt-4 flex items-center justify-between border-t border-slate-100 dark:border-slate-800 pt-3">
@@ -77,8 +83,17 @@ export function ExamCard({ exam }: { exam: Exam }) {
 export function ExamsExplorer({ list }: { list?: Exam[] }) {
   const [query, setQuery] = useState("");
   const [stage, setStage] = useState<string>("All");
-  const exams = list ?? searchExams(query);
-  const filtered = stage === "All" ? exams : exams.filter((e) => e.stage === stage);
+
+  // Both filters apply to the resolved list. This was `list ?? searchExams(query)`,
+  // and since `app/exams/page.tsx` always passes a `list`, the query was dead
+  // code: the input set state that nothing read, so typing on /exams changed
+  // nothing at all.
+  const exams = list ?? EXAMS;
+  const searched = useMemo(() => searchExams(query, exams), [query, exams]);
+  const filtered = useMemo(
+    () => (stage === "All" ? searched : searched.filter((e) => e.stage === stage)),
+    [searched, stage],
+  );
 
   return (
     <div className="space-y-6">

@@ -1,4 +1,5 @@
 import type { Exam } from "@/lib/types";
+import { matchesTokens, searchTokens } from "./index";
 
 export const EXAMS: Exam[] = [
   {
@@ -449,17 +450,30 @@ export const EXAMS: Exam[] = [
 
 export const EXAM_STAGES = ["Registration Open", "Registration Closed", "Admit Cards Out", "Results Declared"] as const;
 
-export function getExamBySlug(slug: string): Exam | undefined {
-  return EXAMS.find((e) => e.slug === slug);
+export function getExamBySlug(
+  slug: string,
+  exams: Exam[] = EXAMS,
+): Exam | undefined {
+  return exams.find((e) => e.slug === slug);
 }
 
-export function searchExams(query: string): Exam[] {
-  const q = query.toLowerCase().trim();
-  if (!q) return EXAMS;
-  return EXAMS.filter((e) =>
-    [e.name, e.shortName, e.type, e.conductingBody, ...e.coursesAccepted]
-      .join(" ")
-      .toLowerCase()
-      .includes(q),
-  );
+function examHaystack(e: Exam): string {
+  return [
+    e.name,
+    e.shortName,
+    e.type,
+    e.level,
+    e.conductingBody,
+    e.overview,
+    e.eligibility,
+  ].join(" ");
+}
+
+export function searchExams(
+  query: string,
+  exams: Exam[] = EXAMS,
+): Exam[] {
+  const tokens = searchTokens(query);
+  if (tokens.length === 0) return exams;
+  return exams.filter((e) => matchesTokens(examHaystack(e), tokens));
 }

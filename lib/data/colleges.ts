@@ -2050,28 +2050,33 @@ export const COLLEGES: College[] = [
   },
 ];
 
-export function getCollegeBySlug(slug: string): College | undefined {
-  return COLLEGES.find((c) => c.slug === slug);
+export function getCollegeBySlug(slug: string, dataset: College[] = COLLEGES): College | undefined {
+  return dataset.find((c) => c.slug === slug);
 }
 
-export function getCollegeById(id: string): College | undefined {
-  return COLLEGES.find((c) => c.id === id);
+export function getCollegeById(id: string, dataset: College[] = COLLEGES): College | undefined {
+  return dataset.find((c) => c.id === id);
 }
 
-export function getCollegesByIds(ids: string[]): College[] {
-  const map = new Map(COLLEGES.map((c) => [c.id, c]));
+export function getCollegesByIds(ids: string[], dataset: College[] = COLLEGES): College[] {
+  const map = new Map(dataset.map((c) => [c.id, c]));
   return ids.map((id) => map.get(id)).filter((c): c is College => Boolean(c));
 }
 
-export function getFeaturedColleges(): College[] {
-  return COLLEGES.filter((c) => c.featured);
+export function getFeaturedColleges(dataset: College[] = COLLEGES): College[] {
+  const featured = dataset.filter((c) => c.featured);
+  return featured.length ? featured : [...dataset].sort((a, b) => b.rating - a.rating);
 }
 
-export function getSimilarColleges(college: College, limit = 3): College[] {
-  const sameState = COLLEGES.filter(
+export function getSimilarColleges(
+  college: College,
+  limit = 3,
+  dataset: College[] = COLLEGES,
+): College[] {
+  const sameState = dataset.filter(
     (c) => c.state === college.state && c.id !== college.id,
   );
-  const sameCourses = COLLEGES.filter(
+  const sameCourses = dataset.filter(
     (c) =>
       c.id !== college.id &&
       c.courses.some((course) =>
@@ -2084,13 +2089,18 @@ export function getSimilarColleges(college: College, limit = 3): College[] {
   return merged.slice(0, limit);
 }
 
-export function getRecommendedColleges(recentIds: string[], limit = 4): College[] {
-  if (recentIds.length === 0) return getCollegesByIds(["c01", "c02", "c03", "c04"]);
-  const recent = getCollegesByIds(recentIds);
-  if (recent.length === 0) return getCollegesByIds(["c01", "c02", "c03", "c04"]);
+export function getRecommendedColleges(
+  recentIds: string[],
+  limit = 4,
+  dataset: College[] = COLLEGES,
+): College[] {
+  const fallbackIds = dataset.slice(0, 4).map((c) => c.id);
+  if (recentIds.length === 0) return getCollegesByIds(fallbackIds, dataset);
+  const recent = getCollegesByIds(recentIds, dataset);
+  if (recent.length === 0) return getCollegesByIds(fallbackIds, dataset);
   const states = new Set(recent.map((c) => c.state));
   const tags = new Set(recent.flatMap((c) => c.courses.map((x) => x.degree)));
-  const recs = COLLEGES.filter(
+  const recs = dataset.filter(
     (c) =>
       !recentIds.includes(c.id) &&
       (states.has(c.state) ||
@@ -2100,7 +2110,7 @@ export function getRecommendedColleges(recentIds: string[], limit = 4): College[
     .sort((a, b) => b.rating - a.rating)
     .slice(0, limit);
   if (recs.length < limit) {
-    const extra = COLLEGES.filter((c) => !recentIds.includes(c.id) && !recs.includes(c)).slice(
+    const extra = dataset.filter((c) => !recentIds.includes(c.id) && !recs.includes(c)).slice(
       0,
       limit - recs.length,
     );

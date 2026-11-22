@@ -8,8 +8,11 @@ import {
   ChevronRight,
   Share2,
 } from "lucide-react";
-import { BLOG_POSTS, getBlogPostBySlug, getRelatedPosts } from "@/lib/data/blog";
+import { getRelatedPosts } from "@/lib/data/blog";
+import { resolveBlogPost, resolveBlogPosts, resolveSlugs } from "@/lib/content";
 import { formatDate } from "@/lib/utils";
+import { JsonLd } from "@/components/seo/JsonLd";
+import { blogPostingLd, breadcrumbLd, ldGraph, pageMetadata } from "@/lib/seo";
 import { Badge } from "@/components/ui/Badge";
 import { ArticleCard } from "@/components/blog/BlogExplorer";
 import { AdmissionHelpButton } from "@/components/admission/AdmissionForm";
@@ -19,31 +22,75 @@ interface PageProps {
   params: Promise<{ slug: string }>;
 }
 
-export function generateStaticParams() {
-  return BLOG_POSTS.map((p) => ({ slug: p.slug }));
+export async function generateStaticParams() {
+  const slugs = await resolveSlugs("blogs");
+  return slugs.map((slug) => ({ slug }));
 }
 
+/**
+ * The blog's own SEO columns take precedence over the derived defaults.
+ *
+ * `meta_title`/`meta_description`/`canonical_url` are writable through
+ * `POST/PUT /blogs` and are what an editor reaches for to override a headline
+ * that reads badly in a search result. They used to be dropped by `mapBlogPost`,
+ * so the override existed in the database and nowhere in the HTML.
+ *
+ * `canonical_url` is passed through as-is when set, because the entire point of
+ * an editorial canonical is to point somewhere other than the page's own URL —
+ * normally the original source of a syndicated article. When it is absent the
+ * page canonicalises to itself.
+ */
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
   const { slug } = await params;
-  const post = getBlogPostBySlug(slug);
-  if (!post) return { title: "Article not found" };
-  return {
-    title: post.title,
-    description: post.excerpt,
-    authors: [{ name: post.author }],
+  const { data: post } = await resolveBlogPost(slug);
+  if (!post) {
+    return pageMetadata({
+      title: "Article not found",
+      description: "This article is not available on padhaanewala.",
+      path: `/blog/${slug}`,
+      noindex: true,
+    });
+  }
+
+  const seo = pageMetadata({
+    title: post.metaTitle ?? post.title,
+    description: post.metaDescription ?? post.excerpt,
+    path: `/blog/${post.slug}`,
+    type: "article",
     keywords: post.tags,
-  };
+    publishedTime: post.date,
+    authors: [post.author],
+  });
+
+  return post.canonicalUrl
+    ? { ...seo, alternates: { canonical: post.canonicalUrl } }
+    : seo;
 }
 
 export default async function BlogDetailPage({ params }: PageProps) {
   const { slug } = await params;
-  const post = getBlogPostBySlug(slug);
+  const [{ data: post }, { data: allPosts }] = await Promise.all([
+    resolveBlogPost(slug),
+    resolveBlogPosts(),
+  ]);
   if (!post) notFound();
 
-  const related = getRelatedPosts(post);
+  const related = getRelatedPosts(post).length
+    ? getRelatedPosts(post)
+    : allPosts.filter((p) => p.slug !== post.slug).slice(0, 3);
+
+  const jsonLd = ldGraph([
+    blogPostingLd(post),
+    breadcrumbLd([
+      { name: "Home", path: "/" },
+      { name: "Blog", path: "/blog" },
+      { name: post.title, path: `/blog/${post.slug}` },
+    ]),
+  ]);
 
   return (
     <article className="mx-auto max-w-4xl px-4 py-8 sm:px-6 lg:px-8 lg:py-12">
+      <JsonLd data={jsonLd} />
       <nav className="mb-5 flex items-center gap-1.5 text-xs text-slate-400">
         <Link href="/" className="hover:text-purple-700">Home</Link>
         <ChevronRight className="h-3.5 w-3.5" />
@@ -81,9 +128,11 @@ export default async function BlogDetailPage({ params }: PageProps) {
         </button>
       </div>
 
-      <div className="prose max-w-none">
+      {/* `@tailwindcss/typography` is not a dependency, so article typography is
+          expressed with real utilities here rather than a dead `prose` class. */}
+      <div className="max-w-none text-[1.0625rem] leading-[1.75] text-slate-700 dark:text-slate-300">
         {post.content.map((paragraph, i) => (
-          <p key={i} className="mt-5 leading-relaxed text-slate-700 first:mt-8">
+          <p key={i} className="mt-5 first:mt-0 [&:first-of-type]:text-lg [&:first-of-type]:font-medium [&:first-of-type]:text-slate-900 dark:[&:first-of-type]:text-white">
             {paragraph}
           </p>
         ))}

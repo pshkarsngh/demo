@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import {
   MapPin,
@@ -17,17 +17,7 @@ import {
   Star,
 } from "lucide-react";
 import type { SearchFilters, Sector } from "@/lib/types";
-import {
-  ALL_STATES,
-  ALL_CITIES,
-  ALL_DEGREES,
-  ALL_TYPES,
-  ALL_EXAMS,
-  ALL_ACCREDITATIONS,
-  FEE_RANGES,
-  ALL_DISTRICTS,
-  ALL_UNIVERSITIES,
-} from "@/lib/data";
+import { FEE_RANGES, buildFacets, type CollegeFacets } from "@/lib/data";
 import { cn } from "@/lib/utils";
 
 const ADMISSION_LABELS: Record<string, string> = {
@@ -73,11 +63,11 @@ function CheckboxRow({
       role="checkbox"
       aria-checked={checked}
       onClick={() => onChange(!checked)}
-      className="group flex w-full items-center gap-2.5 rounded-lg px-1 py-1.5 text-left transition-colors hover:bg-purple-50/60"
+      className="group flex w-full items-start gap-2.5 rounded-lg px-1 py-1.5 text-left transition-colors hover:bg-purple-50/60"
     >
       <span
         className={cn(
-          "grid h-4.5 w-4.5 shrink-0 place-items-center rounded border transition-colors",
+          "mt-0.5 grid h-4.5 w-4.5 shrink-0 place-items-center rounded border transition-colors",
           checked ? "border-purple-600 bg-purple-600 text-white" : "border-gray-300 bg-white",
         )}
       >
@@ -87,9 +77,9 @@ function CheckboxRow({
           </svg>
         )}
       </span>
-      <span className="flex-1 truncate text-sm text-gray-700 group-hover:text-purple-800">{label}</span>
+      <span className="flex-1 text-sm leading-snug text-gray-700 break-words group-hover:text-purple-800">{label}</span>
       {typeof count === "number" && (
-        <span className="text-xs text-gray-400">{count}</span>
+        <span className="shrink-0 text-xs text-gray-400">{count}</span>
       )}
     </button>
   );
@@ -101,9 +91,47 @@ interface FiltersProps {
   onClear: () => void;
   counts?: Record<string, number>;
   onClose?: () => void;
+  /** Facet values derived from the active dataset; falls back to bundled lists. */
+  facets?: CollegeFacets;
 }
 
-export function FiltersPanel({ filters, onChange, onClear, onClose }: FiltersProps) {
+const BUNDLED = buildFacets();
+
+/**
+ * How many filters are currently narrowing the results.
+ *
+ * Was written out twice with two different term lists: `CollegesExplorer` counted
+ * 10 (no districts, universities, admission statuses or rating), this panel
+ * counted 14 (with them, but without `maxFee`). So the badge on the "Filters"
+ * button said 2 while the panel header said 5 for the same state. One
+ * definition, used by both.
+ *
+ * Range filters count once regardless of whether both ends are set — "fees under
+ * ₹1.5L" is one choice from the user's side of the screen.
+ */
+export function countActiveFilters(filters: SearchFilters): number {
+  const lists: ReadonlyArray<readonly string[]> = [
+    filters.states ?? [],
+    filters.cities ?? [],
+    filters.courseNames ?? [],
+    filters.sectors ?? [],
+    filters.types ?? [],
+    filters.exams ?? [],
+    filters.accreditations ?? [],
+    filters.districts ?? [],
+    filters.universities ?? [],
+    filters.admissionStatuses ?? [],
+  ];
+  const fromLists = lists.reduce((n, list) => n + list.length, 0);
+  const flags =
+    (filters.hostel === true ? 1 : 0) +
+    (filters.placementRate === true ? 1 : 0) +
+    (filters.minRating !== null ? 1 : 0) +
+    (filters.minFee !== null || filters.maxFee !== null ? 1 : 0);
+  return fromLists + flags;
+}
+
+export function FiltersPanel({ filters, onChange, onClear, onClose, facets = BUNDLED }: FiltersProps) {
   const toggle = <T,>(arrKey: "states" | "cities" | "courseNames" | "sectors" | "types" | "exams" | "accreditations" | "districts" | "universities" | "admissionStatuses", value: T) => {
     const current = (filters[arrKey] as T[]) ?? [];
     const exists = current.some((x) => String(x) === String(value));
@@ -112,21 +140,7 @@ export function FiltersPanel({ filters, onChange, onClear, onClose }: FiltersPro
     } as Partial<SearchFilters>);
   };
 
-  const activeCount =
-    (filters.states?.length ?? 0) +
-    (filters.cities?.length ?? 0) +
-    (filters.courseNames?.length ?? 0) +
-    (filters.sectors?.length ?? 0) +
-    (filters.types?.length ?? 0) +
-    (filters.exams?.length ?? 0) +
-    (filters.accreditations?.length ?? 0) +
-    (filters.districts?.length ?? 0) +
-    (filters.universities?.length ?? 0) +
-    (filters.admissionStatuses?.length ?? 0) +
-    (filters.minRating !== null ? 1 : 0) +
-    (filters.hostel === true ? 1 : 0) +
-    (filters.placementRate === true ? 1 : 0) +
-    (filters.minFee !== null ? 1 : 0);
+  const activeCount = countActiveFilters(filters);
 
   return (
     <div className="flex h-full flex-col">
@@ -163,7 +177,7 @@ export function FiltersPanel({ filters, onChange, onClear, onClose }: FiltersPro
       <div className="scroll-thin flex-1 overflow-y-auto pb-28 lg:pb-4">
         <FilterGroup title="Degree" icon={<GraduationCap className="h-3.5 w-3.5 text-purple-500" />}>
           <div className="space-y-0.5">
-            {ALL_DEGREES.map((d) => (
+            {facets.degrees.map((d) => (
               <CheckboxRow
                 key={d}
                 label={d}
@@ -176,7 +190,7 @@ export function FiltersPanel({ filters, onChange, onClear, onClose }: FiltersPro
 
         <FilterGroup title="State" icon={<MapPin className="h-3.5 w-3.5 text-blue-500" />}>
           <div className="space-y-0.5">
-            {ALL_STATES.map((s) => (
+            {facets.states.map((s) => (
               <CheckboxRow
                 key={s}
                 label={s}
@@ -189,7 +203,7 @@ export function FiltersPanel({ filters, onChange, onClear, onClose }: FiltersPro
 
         <FilterGroup title="City" icon={<MapPin className="h-3.5 w-3.5 text-amber-500" />}>
           <div className="space-y-0.5">
-            {ALL_CITIES.map((c) => (
+            {facets.cities.map((c) => (
               <CheckboxRow
                 key={c}
                 label={c}
@@ -202,7 +216,7 @@ export function FiltersPanel({ filters, onChange, onClear, onClose }: FiltersPro
 
         <FilterGroup title="College type" icon={<Building2 className="h-3.5 w-3.5 text-orange-500" />}>
           <div className="space-y-0.5">
-            {ALL_TYPES.map((t) => (
+            {facets.types.map((t) => (
               <CheckboxRow
                 key={t}
                 label={t}
@@ -228,7 +242,7 @@ export function FiltersPanel({ filters, onChange, onClear, onClose }: FiltersPro
 
         <FilterGroup title="Entrance exam" icon={<FileCheck2 className="h-3.5 w-3.5 text-blue-500" />}>
           <div className="space-y-0.5">
-            {ALL_EXAMS.map((e) => (
+            {facets.exams.map((e) => (
               <CheckboxRow
                 key={e}
                 label={e}
@@ -241,7 +255,7 @@ export function FiltersPanel({ filters, onChange, onClear, onClose }: FiltersPro
 
         <FilterGroup title="Accreditation" icon={<Award className="h-3.5 w-3.5 text-amber-500" />}>
           <div className="space-y-0.5">
-            {ALL_ACCREDITATIONS.map((a) => (
+            {facets.accreditations.map((a) => (
               <CheckboxRow
                 key={a}
                 label={a}
@@ -280,7 +294,7 @@ export function FiltersPanel({ filters, onChange, onClear, onClose }: FiltersPro
 
         <FilterGroup title="District" icon={<Layers className="h-3.5 w-3.5 text-blue-500" />}>
           <div className="space-y-0.5">
-            {ALL_DISTRICTS.map((d) => (
+            {facets.districts.map((d) => (
               <CheckboxRow
                 key={d}
                 label={d}
@@ -293,7 +307,7 @@ export function FiltersPanel({ filters, onChange, onClear, onClose }: FiltersPro
 
         <FilterGroup title="University / Board" icon={<CheckSquare className="h-3.5 w-3.5 text-purple-500" />}>
           <div className="space-y-0.5">
-            {ALL_UNIVERSITIES.map((u) => (
+            {facets.universities.map((u) => (
               <CheckboxRow
                 key={u}
                 label={u}

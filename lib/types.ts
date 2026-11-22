@@ -81,6 +81,12 @@ export interface College {
   shortName: string;
   initials: string;
   gradientId: string;
+  /**
+   * Admin-uploaded banner/logo, or undefined. Components that render a campus
+   * image prefer this and fall back to the `gradientId` when it is absent, so
+   * every pre-existing record keeps the decoration it always had.
+   */
+  imageUrl?: string;
   tagline: string;
   overview: string;
   founded: number;
@@ -147,6 +153,8 @@ export interface Scholarship {
   renewable: boolean;
   tags: string[];
   color: string;
+  /** Admin-uploaded image, or undefined to fall back to the gradient/colour. */
+  imageUrl?: string;
   documents: string[];
   applicationProcess: string[];
   website?: string;
@@ -190,6 +198,8 @@ export interface Exam {
   website: string;
   coursesAccepted: string[];
   collegesAccepting: string[];
+  /** Admin-uploaded hero image, or undefined to fall back to the gradient. */
+  imageUrl?: string;
   faqs: Faq[];
 }
 
@@ -206,15 +216,38 @@ export interface MockTest {
   description: string;
   topics: string[];
   attempts: number;
+  /**
+   * Marks added per correct answer. Defaults to 3 when absent. Papers that
+   * declare their own scheme (JEE Main is +4/−1 for 300 marks) set it here
+   * rather than having the score hardcoded in the runner.
+   */
+  marksPerCorrect?: number;
+  /** Marks deducted per incorrect answer. Defaults to 1 when absent. */
+  marksPerWrong?: number;
+  /**
+   * Explicit, ordered question ids. A curated paper must be served verbatim,
+   * so a test that lists these ignores `questionCount` for sampling purposes.
+   */
+  questionIds?: string[];
 }
+
+export type MockTestQuestionType = "mcq" | "numeric";
 
 export interface MockTestQuestion {
   id: string;
   text: string;
+  /** Defaults to "mcq" when absent. */
+  type?: MockTestQuestionType;
+  /** Empty for numeric questions. */
   options: string[];
+  /** Index of the correct option; -1 for numeric questions. */
   correctIndex: number;
+  /** Accepted value for a numeric question. Absent for MCQs. */
+  numericAnswer?: number;
   explanation: string;
   topic: string;
+  /** Subject this question belongs to, used to build per-subject pools. */
+  subject?: string;
 }
 
 export interface TopicPerformance {
@@ -237,7 +270,6 @@ export interface MockTestResult {
   score: number;
   maxScore: number;
   topicPerformance: Record<string, TopicPerformance>;
-  percentile: number;
 }
 
 export type BlogCategory =
@@ -264,6 +296,18 @@ export interface BlogPost {
   readTime: string;
   tags: string[];
   featured?: boolean;
+  /**
+   * Editorial SEO overrides, read from the blog's own `meta_title`,
+   * `meta_description` and `canonical_url` columns.
+   *
+   * These were accepted by `POST/PUT /blogs` and then silently dropped here, so
+   * an editor could fill in the SEO fields in the admin panel and see nothing
+   * change in the page source. Optional, because a post that has none falls back
+   * to its title and excerpt.
+   */
+  metaTitle?: string;
+  metaDescription?: string;
+  canonicalUrl?: string;
 }
 
 export interface AdmissionEnquiry {

@@ -4,9 +4,10 @@ import Link from "next/link";
 import {
   Building2,
   Scale,
-  Sparkles,
   Award,
+  CalendarDays,
   FileQuestion,
+  MessagesSquare,
   Headset,
   ArrowRight,
 } from "lucide-react";
@@ -16,7 +17,7 @@ import { SectionHeading } from "@/components/ui/SectionHeading";
 const ACTIONS = [
   {
     title: "Find Colleges",
-    desc: "Search 12,000+ colleges by course, city and budget.",
+    desc: "Search the college catalogue by course, city and budget.",
     href: "/colleges",
     icon: Building2,
     grad: "from-purple-600 to-indigo-600",
@@ -31,12 +32,20 @@ const ACTIONS = [
     shadow: "shadow-blue-600/25",
   },
   {
-    title: "College Predictor",
-    desc: "AI-based prediction from your entrance rank.",
-    href: "/college-predictor",
-    icon: Sparkles,
-    grad: "from-orange-500 to-amber-500",
-    shadow: "shadow-orange-500/25",
+    title: "Mock Tests",
+    desc: "Practice exams with a real timer and instant score analysis.",
+    href: "/mock-tests",
+    icon: FileQuestion,
+    grad: "from-emerald-500 to-teal-500",
+    shadow: "shadow-emerald-500/25",
+  },
+  {
+    title: "AI Assistant",
+    desc: "Ask anything about courses, exams and admissions.",
+    href: "/ask-ai",
+    icon: MessagesSquare,
+    grad: "from-blue-600 to-cyan-500",
+    shadow: "shadow-blue-600/25",
   },
   {
     title: "Scholarships",
@@ -47,20 +56,20 @@ const ACTIONS = [
     shadow: "shadow-amber-500/25",
   },
   {
-    title: "Mock Tests",
-    desc: "Practice exams with instant score analysis.",
-    href: "/mock-tests",
-    icon: FileQuestion,
-    grad: "from-emerald-500 to-teal-500",
-    shadow: "shadow-emerald-500/25",
-  },
-  {
     title: "Admission Assistance",
     desc: "Free counselling to plan your admission.",
     href: "/admission",
     icon: Headset,
     grad: "from-rose-500 to-pink-500",
     shadow: "shadow-rose-500/25",
+  },
+  {
+    title: "Entrance Exams",
+    desc: "Dates, patterns and official links for every major exam.",
+    href: "/exams",
+    icon: CalendarDays,
+    grad: "from-cyan-600 to-sky-600",
+    shadow: "shadow-cyan-600/25",
   },
 ];
 
